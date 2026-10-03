@@ -3009,38 +3009,38 @@ function renderOrdersGrid(data) {
 
 function isNewStyleOrderNumber(n) { return /^ST\d{4,}$/.test(String(n || '').trim()); }
 
-// رقم الطلب = ST + 4 أرقام (ST0001, ST0002, ...) والعداد مشترك مع صفحة الطالب (counters/ordersST)
-// الحجز بيتم جوه Firestore transaction عشان مفيش رقمين يتكرروا.
-async function nextOrderNumber() {
-    const counterRef = db.collection('counters').doc('ordersST');
-    // أعلى رقم ST#### موجود فعليًا (يغطي أي رقم اتكتب يدوي أعلى من العداد)
-    let existingMax = 0;
-    orders.forEach(o => {
-        const m = /^ST(\d+)$/.exec(String(o.number || '').trim());
-        if (m) existingMax = Math.max(existingMax, parseInt(m[1], 10));
-    });
-    return db.runTransaction(async (tx) => {
-        const snap = await tx.get(counterRef);
-        const cur = snap.exists ? (Number(snap.data().count) || 0) : 0;
-        const next = Math.max(cur, existingMax) + 1;
-        tx.set(counterRef, { count: next }, { merge: true });
-        return 'ST' + String(next).padStart(4, '0');
-    });
+// رقم الطلب = ST + 4 أرقام عشوائية (زي ST1528)، ومحجوز في counters/reserved_ST#### (نفس حجز صفحة الطالب)
+// عشان مفيش رقمين يتكرروا نهائي حتى لو طالب سجل طلب في نفس لحظة ما انت بتعمل طلب.
+function randomOrderDigits(digits) {
+    const min = Math.pow(10, digits - 1), range = Math.pow(10, digits) - min;
+    const buf = new Uint32Array(1);
+    do { crypto.getRandomValues(buf); } while (buf[0] >= Math.floor(4294967296 / range) * range);
+    return String(min + (buf[0] % range));
 }
 
-// لو الأدمن كتب رقم ST#### يدويًا أكبر من العداد، بنرفع العداد عشان رقم الطالب الجاي ما يتصادمش معاه
-async function bumpOrderCounter(number) {
-    const m = /^ST(\d+)$/.exec(String(number || '').trim());
-    if (!m) return;
-    const n = parseInt(m[1], 10);
-    const counterRef = db.collection('counters').doc('ordersST');
+// بيحجز الرقم لو لسه محدش حجزه. بيرجّع true لو الحجز نجح، false لو الرقم مأخود.
+async function reserveOrderNumber(number) {
+    const ref = db.collection('counters').doc('reserved_' + number);
     try {
-        await db.runTransaction(async (tx) => {
-            const snap = await tx.get(counterRef);
-            const cur = snap.exists ? (Number(snap.data().count) || 0) : 0;
-            if (n > cur) tx.set(counterRef, { count: n }, { merge: true });
+        return await db.runTransaction(async (tx) => {
+            const snap = await tx.get(ref);
+            if (snap.exists) return false;
+            tx.set(ref, { type: 'order-number', created: new Date().toISOString() });
+            return true;
         });
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error(e); return false; }
+}
+
+let prefilledOrderNumber = '';
+async function nextOrderNumber() {
+    for (let attempt = 0; attempt < 60; attempt++) {
+        const digits = attempt < 40 ? 4 : 5; // 4 أرقام الأول، ولو المساحة قربت تخلص بنزوّد لـ 5
+        const candidate = 'ST' + randomOrderDigits(digits);
+        const taken = orders.some(o => (o.number || '').trim() === candidate) || invoices.some(i => (i.number || '').trim() === candidate);
+        if (taken) continue;
+        if (await reserveOrderNumber(candidate)) return candidate;
+    }
+    throw new Error('could-not-allocate-order-number');
 }
 
 let currentDeliveredFileUrl = '';
@@ -3051,6 +3051,7 @@ async function openOrderModal(id = null) {
     document.getElementById('order-form').reset();
     document.getElementById('order-id').value = '';
     document.getElementById('order-number').value = '';
+    prefilledOrderNumber = '';
     document.getElementById('order-delivery-link').value = '';
     document.getElementById('order-payment-link').value = '';
     document.getElementById('order-payment-link-current').textContent = '';
@@ -3098,7 +3099,8 @@ async function openOrderModal(id = null) {
         document.getElementById('order-delivery-current').textContent = '';
         togglePaymentDetailField();
         addServiceRow('order');
-        document.getElementById('order-number').value = await nextOrderNumber();
+        prefilledOrderNumber = await nextOrderNumber();
+        document.getElementById('order-number').value = prefilledOrderNumber;
     }
 }
 
@@ -3264,6 +3266,13 @@ document.getElementById('order-form').addEventListener('submit', async (e) => {
     const duplicateInvoice = !isNewStyleOrderNumber(orderNumber) ? null : invoices.find(i => (i.number || '').trim() === orderNumber && (!currentOrder || i.id !== currentOrder.invoiceId));
     if (duplicateInvoice) { showToast('رقم الطلب ده مستخدم بالفعل في فاتورة تانية', 'error'); return; }
 
+    if (isNewStyleOrderNumber(orderNumber)) {
+        const prevNumber = id ? ((orders.find(o => o.id === id) || {}).number || '') : prefilledOrderNumber;
+        if (orderNumber !== prevNumber && !(await reserveOrderNumber(orderNumber))) {
+            showToast('رقم الطلب ده محجوز قبل كده، جرّب رقم تاني', 'error'); return;
+        }
+    }
+
     const data = {
         number: orderNumber,
         name: document.getElementById('order-name').value.trim(),
@@ -3306,7 +3315,6 @@ document.getElementById('order-form').addEventListener('submit', async (e) => {
                 });
             }
         })
-        .then(() => bumpOrderCounter(orderNumber))
         .then(() => { closeModal('order-modal'); showToast(id ? 'تم تحديث الطلب' : 'تم إنشاء الطلب (بانتظار القبول)', 'success'); })
         .catch(() => showToast('حدث خطأ أثناء الحفظ', 'error'))
         .finally(() => { submitBtn.disabled = false; submitBtn.textContent = originalBtnText; });
