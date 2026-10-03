@@ -1108,6 +1108,10 @@ body.sb-open{ overflow:hidden; }
                 <span class="nav-icon">🗂️</span> الطلبات
                 <span class="nav-count" id="nav-count-orders">0</span>
             </a>
+            <a href="#" class="nav-item" data-page="students">
+                <span class="nav-icon">👥</span> المستخدمين
+                <span class="nav-count" id="nav-count-students">0</span>
+            </a>
             <a href="#" class="nav-item" data-page="promocodes">
                 <span class="nav-icon">🎫</span> البروموكود
                 <span class="nav-count" id="nav-count-promocodes">0</span>
@@ -1327,6 +1331,32 @@ body.sb-open{ overflow:hidden; }
                 <div id="orders-grid" class="orders-grid"></div>
             </section>
 
+            <!-- ============ Students (platform users) ============ -->
+            <section id="page-students" class="page">
+                <div class="page-header">
+                    <div>
+                        <div class="page-eyebrow">USERS</div>
+                        <h1>المستخدمين</h1>
+                        <p>إجمالي <span id="students-count">0</span> مستخدم — <span id="students-new-count">0</span> سجّلوا آخر 7 أيام</p>
+                    </div>
+                </div>
+
+                <div class="filters">
+                    <input type="text" id="student-search" class="filter-input" placeholder="ابحث بالاسم أو الإيميل أو رقم التليفون أو الجامعة..." oninput="refreshStudents()">
+                </div>
+
+                <div class="table-card">
+                    <div class="table-wrap">
+                        <table class="data-table">
+                            <thead>
+                                <tr><th>تاريخ التسجيل</th><th>الاسم</th><th>التليفون</th><th>الإيميل</th><th>الجامعة / المرحلة</th><th>الطلبات</th><th>إجراءات</th></tr>
+                            </thead>
+                            <tbody id="students-tbody"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
             <!-- ============ Promocodes ============ -->
             <section id="page-promocodes" class="page">
                 <div class="page-header">
@@ -1544,6 +1574,17 @@ body.sb-open{ overflow:hidden; }
             <button class="modal-close" onclick="closeModal('view-invoice-modal')">&times;</button>
         </div>
         <div class="modal-body" id="view-invoice-content"></div>
+    </div>
+</div>
+
+<!-- ============ View Student Modal ============ -->
+<div id="view-student-modal" class="modal-overlay">
+    <div class="modal-box">
+        <div class="modal-head">
+            <h2>بيانات المستخدم</h2>
+            <button class="modal-close" onclick="closeModal('view-student-modal')">&times;</button>
+        </div>
+        <div class="modal-body" id="view-student-content"></div>
     </div>
 </div>
 
@@ -1857,6 +1898,8 @@ let promocodes = [];
 let refunds = [];
 let ratings = [];
 let trash = [];
+let students = [];
+let studentsLoadError = false;
 
 // Legit service catalog only
 const SERVICE_OPTIONS = [
@@ -1980,6 +2023,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
         if (page === 'promocodes') refreshPromocodes();
         if (page === 'refunds') refreshRefunds();
         if (page === 'ratings') refreshRatings();
+        if (page === 'students') refreshStudents();
         if (page === 'trash') refreshTrash();
     });
 });
@@ -2017,6 +2061,18 @@ function initListeners() {
         refreshActivePage();
     }, err => console.error('ratings listener', err));
 
+    // مستخدمي المنصة (أي حد بيعمل حساب جديد في صفحة الطالب بيظهر هنا لحظيًا).
+    // من غير orderBy عشان الحسابات القديمة اللي ملهاش تاريخ تسجيل ما تختفيش، والترتيب بيتم في الصفحة.
+    db.collection('students').onSnapshot(snap => {
+        students = snap.docs.map(d => {
+            const s = { id: d.id, ...d.data() };
+            delete s.hash; delete s.salt; // بيانات الحماية القديمة مبتتعرضش ولا بتتخزن في الصفحة
+            return s;
+        });
+        studentsLoadError = false;
+        refreshActivePage();
+    }, err => { console.error('students listener', err); studentsLoadError = true; refreshActivePage(); });
+
     db.collection('trash').orderBy('deletedAt', 'desc').onSnapshot(snap => {
         trash = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         refreshActivePage();
@@ -2033,6 +2089,7 @@ function refreshActivePage() {
     if (id === 'promocodes') refreshPromocodes();
     if (id === 'refunds') refreshRefunds();
     if (id === 'ratings') refreshRatings();
+    if (id === 'students') refreshStudents();
     if (id === 'trash') refreshTrash();
     updateNavCounts();
 }
@@ -2043,6 +2100,7 @@ function updateNavCounts() {
     setText('nav-count-promocodes', promocodes.length);
     setText('nav-count-refunds', refunds.length);
     setText('nav-count-ratings', ratings.length);
+    setText('nav-count-students', students.length);
     setText('nav-count-trash', trash.length);
 }
 
@@ -3553,6 +3611,143 @@ function deleteRating(id) {
     db.collection('ratings').doc(id).delete()
         .then(() => showToast('تم حذف التقييم', 'success'))
         .catch(() => showToast('حدث خطأ أثناء الحذف', 'error'));
+}
+
+// =============================================================
+// Students (platform users)
+// =============================================================
+// مفتاح مقارنة التليفون: آخر 10 أرقام (بيتجاهل الصفر الأول وكود الدولة والمسافات والأرقام العربي)
+function phoneKey(p) {
+    const d = String(p || '').replace(/[٠-٩]/g, c => '٠١٢٣٤٥٦٧٨٩'.indexOf(c)).replace(/\D/g, '');
+    return d.slice(-10);
+}
+
+function buildOrderIndex() {
+    const byEmail = new Map(), byPhone = new Map();
+    orders.forEach(o => {
+        const em = (o.email || '').trim().toLowerCase();
+        if (em) { if (!byEmail.has(em)) byEmail.set(em, []); byEmail.get(em).push(o); }
+        new Set([phoneKey(o.phone), phoneKey(o.contact)].filter(k => k.length >= 9)).forEach(k => {
+            if (!byPhone.has(k)) byPhone.set(k, []);
+            byPhone.get(k).push(o);
+        });
+    });
+    return { byEmail, byPhone };
+}
+
+// طلبات المستخدم = أي طلب مسجّل بنفس الإيميل أو نفس رقم التليفون
+function ordersOfStudent(s, idx) {
+    idx = idx || buildOrderIndex();
+    const seen = new Set(), out = [];
+    const add = arr => (arr || []).forEach(o => { if (!seen.has(o.id)) { seen.add(o.id); out.push(o); } });
+    add(idx.byEmail.get((s.email || '').trim().toLowerCase()));
+    const pk = phoneKey(s.phone);
+    if (pk.length >= 9) add(idx.byPhone.get(pk));
+    return out;
+}
+
+function refreshStudents() {
+    const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
+    setText('students-count', students.length);
+    setText('students-new-count', students.filter(s => s.created && new Date(s.created).getTime() >= weekAgo).length);
+
+    const tbody = document.getElementById('students-tbody');
+    if (!tbody) return;
+    if (studentsLoadError) {
+        tbody.innerHTML = `<tr><td colspan="7">${emptyState('⚠️', 'مقدرتش أقرا بيانات المستخدمين. راجع صلاحيات Firestore لمجموعة students')}</td></tr>`;
+        return;
+    }
+    const q = (document.getElementById('student-search')?.value || '').trim().toLowerCase();
+    const qDigits = phoneKey(q);
+    const list = students
+        .filter(s => !q ||
+            (s.name || '').toLowerCase().includes(q) ||
+            (s.email || '').toLowerCase().includes(q) ||
+            (s.university || '').toLowerCase().includes(q) ||
+            (s.college || '').toLowerCase().includes(q) ||
+            (qDigits.length >= 4 && phoneKey(s.phone).includes(qDigits)))
+        .sort((x, y) => String(y.created || '').localeCompare(String(x.created || '')));
+
+    if (!list.length) {
+        tbody.innerHTML = `<tr><td colspan="7">${emptyState('👥', q ? 'مفيش مستخدم مطابق للبحث' : 'لسه محدش سجّل حساب')}</td></tr>`;
+        return;
+    }
+    const idx = buildOrderIndex();
+    const dayAgo2 = Date.now() - 48 * 3600 * 1000;
+    tbody.innerHTML = list.map(s => {
+        const date = s.created ? new Date(s.created).toLocaleDateString('ar-EG') : '—';
+        const isNew = s.created && new Date(s.created).getTime() >= dayAgo2;
+        const ords = ordersOfStudent(s, idx);
+        const done = ords.filter(o => o.status === 'completed').length;
+        const acad = [s.university, s.level].filter(Boolean).map(escapeHtml).join(' — ') || '—';
+        return `
+        <tr>
+            <td>${date}${isNew ? ' <span class="code-chip" style="font-size:10px;">جديد</span>' : ''}</td>
+            <td><b>${escapeHtml(s.name) || 'بدون اسم'}</b></td>
+            <td class="mono" dir="ltr" style="text-align:right;">${escapeHtml(s.phone) || '—'}</td>
+            <td class="mono" dir="ltr" style="text-align:right;">${escapeHtml(s.email) || '—'}</td>
+            <td>${acad}</td>
+            <td><b>${ords.length}</b>${ords.length ? ` <span style="color:var(--ink-500); font-size:12px;">(${done} مكتمل)</span>` : ''}</td>
+            <td>
+                <div class="action-btns">
+                    <button class="action-btn view" onclick="viewStudent('${s.id.replace(/'/g, "\\'")}')" title="عرض التفاصيل">👁️</button>
+                </div>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+function viewStudent(id) {
+    const s = students.find(x => x.id === id);
+    if (!s) return;
+    const ords = ordersOfStudent(s).sort((x, y) => String(y.created || '').localeCompare(String(x.created || '')));
+    const count = st => ords.filter(o => st.includes(o.status)).length;
+    const counted = ords.filter(o => !['rejected', 'cancelled'].includes(o.status));
+    const totalValue = counted.reduce((sum, o) => sum + (Number(o.price) || 0), 0);
+    const paidValue = counted.filter(o => o.paid).reduce((sum, o) => sum + (Number(o.price) || 0), 0);
+    const joined = s.created ? new Date(s.created).toLocaleDateString('ar-EG') : '—';
+    const field = (label, val, mono) => `<div class="doc-field"><span>${label}</span><br><b${mono ? ' class="mono" dir="ltr"' : ''}>${val ? escapeHtml(val) : '—'}</b></div>`;
+
+    document.getElementById('view-student-content').innerHTML = `
+        <div class="doc-sheet">
+            <div class="doc-section">
+                <h4>بيانات الحساب</h4>
+                <div class="doc-grid">
+                    ${field('الاسم', s.name)}
+                    ${field('تاريخ التسجيل', joined)}
+                    ${field('رقم التليفون', s.phone, true)}
+                    ${field('الإيميل', s.email, true)}
+                    ${field('الجامعة', s.university)}
+                    ${field('الكلية', s.college)}
+                    ${field('المرحلة', s.level)}
+                </div>
+            </div>
+            <div class="doc-section">
+                <h4>نشاط الطلبات</h4>
+                <div class="doc-grid">
+                    ${field('إجمالي الطلبات', String(ords.length))}
+                    ${field('مكتملة', String(count(['completed'])))}
+                    ${field('قيد العمل / مقبولة', String(count(['in_progress', 'accepted'])))}
+                    ${field('قائمة الانتظار', String(count(['waiting'])))}
+                    ${field('مرفوضة / ملغية', String(count(['rejected', 'cancelled'])))}
+                    ${field('إجمالي القيمة (بدون المرفوض)', '$' + totalValue.toFixed(2))}
+                    ${field('المدفوع', '$' + paidValue.toFixed(2))}
+                </div>
+            </div>
+            <div class="doc-section">
+                <h4>الطلبات</h4>
+                ${ords.length ? ords.map(o => `
+                    <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:9px 0; border-bottom:1px dashed var(--border); font-size:13px;">
+                        <b class="mono">${escapeHtml(o.number) || '—'}</b>
+                        <span style="flex:1; min-width:140px;">${escapeHtml(o.service) || '—'}</span>
+                        <span style="color:var(--ink-500);">${escapeHtml(STATUS_LABELS.order[o.status] || o.status || '')}</span>
+                        <span class="mono">$${(Number(o.price) || 0).toFixed(2)}</span>
+                        <span style="color:var(--ink-500);">${o.created ? new Date(o.created).toLocaleDateString('ar-EG') : ''}</span>
+                        <button class="action-btn view" title="فتح الطلب" onclick="closeModal('view-student-modal'); editOrder('${o.id}')">👁️</button>
+                    </div>`).join('') : '<div style="color:var(--ink-500); font-size:13px; padding:8px 0;">المستخدم ده لسه معملش أي طلب</div>'}
+            </div>
+        </div>`;
+    document.getElementById('view-student-modal').classList.add('active');
 }
 
 document.getElementById('refund-form').addEventListener('submit', (e) => {
