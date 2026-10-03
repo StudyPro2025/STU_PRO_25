@@ -1852,8 +1852,12 @@ function syncOrderToInvoice(o, patch) {
     if ('deliveredFileUrl' in patch) invPatch.deliveredFileUrl = patch.deliveredFileUrl;
     if ('paymentLink' in patch) invPatch.paymentLink = patch.paymentLink;
     if ('payment' in patch) invPatch.payment = patch.payment;
+    // رقم الفاتورة بيتبع رقم الطلب بس لو هي أصلاً واخدة نفس رقم الطلب (يعني الجداد ST####). القديمة مبتتلمسش.
+    const renameLinked = 'number' in patch && patch.number && isNewStyleOrderNumber(o.number) && o.invoiceNumber === o.number && patch.number !== o.number;
+    if (renameLinked) { invPatch.number = patch.number; invPatch.orderNumber = patch.number; }
     if (!Object.keys(invPatch).length) return Promise.resolve();
-    return db.collection('invoices').doc(o.invoiceId).update(invPatch);
+    return db.collection('invoices').doc(o.invoiceId).update(invPatch)
+        .then(() => renameLinked ? db.collection('orders').doc(o.id).update({ invoiceNumber: patch.number }) : null);
 }
 
 // Push a partial update from an invoice onto its source order (no-op if not linked)
@@ -2321,6 +2325,21 @@ function populateServiceSelect(selectId) {
 // =============================================================
 let serviceRowSeq = 0;
 
+// بيختار الخدمة اللي الطالب اختارها في الـ dropdown حتى لو الكتابة مختلفة شوية عن قايمة الأدمن
+// (مسافات زيادة / GIS vs Gis...). ولو مفيش أي تطابق، بيضيف اختيار بنفس نص الطالب بالظبط بدل ما يسيبها فاضية.
+function setServiceSelectValue(selectEl, value) {
+    const raw = String(value || '');
+    if (!raw.trim()) { selectEl.value = ''; return; }
+    const norm = s => String(s || '').replace(/\s+/g, '').toLowerCase();
+    const opts = Array.from(selectEl.options);
+    let match = opts.find(o => o.value === raw) || opts.find(o => o.value && norm(o.value) === norm(raw));
+    if (!match) {
+        match = new Option(raw.trim(), raw);
+        selectEl.add(match);
+    }
+    selectEl.value = match.value;
+}
+
 function addServiceRow(prefix, item = null) {
     const container = document.getElementById(prefix + '-items');
     if (!container) return null;
@@ -2343,7 +2362,7 @@ function addServiceRow(prefix, item = null) {
     container.appendChild(row);
 
     if (item) {
-        row.querySelector('.svc-service').value = item.service || '';
+        setServiceSelectValue(row.querySelector('.svc-service'), item.service);
         row.querySelector('.svc-price').value = item.price || 0;
         row.querySelector('.svc-qty').value = item.qty || 1;
         row.querySelector('.svc-promo').value = item.promo || '';
@@ -2946,41 +2965,41 @@ function renderOrdersGrid(data) {
     `; }).join('');
 }
 
-// بيولّد رقم تسلسلي فريد باستخدام Firestore transaction، عشان لو طلبين اتبعتوا في نفس اللحظة
-// ما ياخدوش نفس الرقم (بدل الاعتماد على orders.length اللي ممكن يتقرأ قبل ما يتزامن)
-async function nextSequentialNumber(prefix, counterId) {
-    const counterRef = db.collection('counters').doc(counterId);
-    try {
-        const newCount = await db.runTransaction(async (transaction) => {
-            const doc = await transaction.get(counterRef);
-            if (doc.exists) {
-                const next = (doc.data().count || 0) + 1;
-                transaction.set(counterRef, { count: next }, { merge: true });
-                return next;
-            }
-            return null; // العداد لسه معملوش؛ هنظبطه تحت أول مرة بس
-        });
-        if (newCount !== null) return prefix + String(newCount).padStart(4, '0');
-    } catch (e) { /* هنكمل على الخطة البديلة تحت */ }
+function isNewStyleOrderNumber(n) { return /^ST\d{4,}$/.test(String(n || '').trim()); }
 
-    // أول مرة بس: بنجيب أعلى رقم موجود فعليًا في الطلبات عشان منكررش أرقام قديمة
-    try {
-        const snap = await db.collection('orders')
-            .where('number', '>=', prefix).where('number', '<', prefix + '\uf8ff').get();
-        let max = 0;
-        snap.forEach(doc => {
-            const n = parseInt(String(doc.data().number || '').slice(prefix.length), 10);
-            if (!isNaN(n) && n > max) max = n;
-        });
-        const next = max + 1;
-        await counterRef.set({ count: next }, { merge: true });
-        return prefix + String(next).padStart(4, '0');
-    } catch (e2) {
-        return prefix + Date.now().toString().slice(-6);
-    }
+// رقم الطلب = ST + 4 أرقام (ST0001, ST0002, ...) والعداد مشترك مع صفحة الطالب (counters/ordersST)
+// الحجز بيتم جوه Firestore transaction عشان مفيش رقمين يتكرروا.
+async function nextOrderNumber() {
+    const counterRef = db.collection('counters').doc('ordersST');
+    // أعلى رقم ST#### موجود فعليًا (يغطي أي رقم اتكتب يدوي أعلى من العداد)
+    let existingMax = 0;
+    orders.forEach(o => {
+        const m = /^ST(\d+)$/.exec(String(o.number || '').trim());
+        if (m) existingMax = Math.max(existingMax, parseInt(m[1], 10));
+    });
+    return db.runTransaction(async (tx) => {
+        const snap = await tx.get(counterRef);
+        const cur = snap.exists ? (Number(snap.data().count) || 0) : 0;
+        const next = Math.max(cur, existingMax) + 1;
+        tx.set(counterRef, { count: next }, { merge: true });
+        return 'ST' + String(next).padStart(4, '0');
+    });
 }
 
-function nextOrderNumber() { return nextSequentialNumber('SP-', 'ordersSP'); }
+// لو الأدمن كتب رقم ST#### يدويًا أكبر من العداد، بنرفع العداد عشان رقم الطالب الجاي ما يتصادمش معاه
+async function bumpOrderCounter(number) {
+    const m = /^ST(\d+)$/.exec(String(number || '').trim());
+    if (!m) return;
+    const n = parseInt(m[1], 10);
+    const counterRef = db.collection('counters').doc('ordersST');
+    try {
+        await db.runTransaction(async (tx) => {
+            const snap = await tx.get(counterRef);
+            const cur = snap.exists ? (Number(snap.data().count) || 0) : 0;
+            if (n > cur) tx.set(counterRef, { count: n }, { merge: true });
+        });
+    } catch (e) { console.error(e); }
+}
 
 let currentDeliveredFileUrl = '';
 
@@ -3122,8 +3141,13 @@ function acceptOrder(id) {
         ? o.items
         : [{ service: o.service || '', price: o.price || 0, qty: 1, promo: '', discount: 0, total: o.price || 0 }];
 
+    if (isNewStyleOrderNumber(o.number) && invoices.some(i => (i.number || '').trim() === String(o.number).trim())) {
+        showToast('فيه فاتورة تانية بنفس الرقم ' + o.number + '، راجعها الأول', 'error');
+        return;
+    }
+
     const invoiceData = {
-        number: nextInvoiceNumber(),
+        number: isNewStyleOrderNumber(o.number) ? o.number : nextInvoiceNumber(), // الطلبات الجديدة (ST####): الفاتورة بنفس الرقم. القديمة: زي ما كانت
         name: o.name || '',
         phone: o.phone || o.contact || '',
         level: o.level || '',
@@ -3194,6 +3218,9 @@ document.getElementById('order-form').addEventListener('submit', async (e) => {
     if (!orderNumber) { showToast('من فضلك أدخل رقم الطلب', 'error'); return; }
     const duplicateOrder = orders.find(o => o.id !== id && (o.number || '').trim() === orderNumber);
     if (duplicateOrder) { showToast('رقم الطلب ده مستخدم بالفعل في طلب تاني (' + duplicateOrder.name + ')', 'error'); return; }
+    const currentOrder = id ? orders.find(o => o.id === id) : null;
+    const duplicateInvoice = !isNewStyleOrderNumber(orderNumber) ? null : invoices.find(i => (i.number || '').trim() === orderNumber && (!currentOrder || i.id !== currentOrder.invoiceId));
+    if (duplicateInvoice) { showToast('رقم الطلب ده مستخدم بالفعل في فاتورة تانية', 'error'); return; }
 
     const data = {
         number: orderNumber,
@@ -3229,6 +3256,7 @@ document.getElementById('order-form').addEventListener('submit', async (e) => {
                 // payment method/link, delivery link) onto its invoice too.
                 const o = orders.find(x => x.id === id);
                 return syncOrderToInvoice(o, {
+                    number: data.number,
                     status: data.status,
                     deliveredFileUrl: data.deliveredFileUrl,
                     paymentLink: data.paymentLink,
@@ -3236,6 +3264,7 @@ document.getElementById('order-form').addEventListener('submit', async (e) => {
                 });
             }
         })
+        .then(() => bumpOrderCounter(orderNumber))
         .then(() => { closeModal('order-modal'); showToast(id ? 'تم تحديث الطلب' : 'تم إنشاء الطلب (بانتظار القبول)', 'success'); })
         .catch(() => showToast('حدث خطأ أثناء الحفظ', 'error'))
         .finally(() => { submitBtn.disabled = false; submitBtn.textContent = originalBtnText; });
