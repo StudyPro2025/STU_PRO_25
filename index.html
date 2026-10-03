@@ -876,7 +876,7 @@
                 <button type="button" class="mode-back-link" onclick="showLookupModeChoice()">‹ رجوع لاختيار النوع</button>
                 <div class="lookup-row">
                     <div class="input-clear-wrap">
-                        <input type="text" id="lookup-code" placeholder="مثال: STU-P-XXXX أو STP-2026-XXXX">
+                        <input type="text" id="lookup-code" placeholder="مثال: ST0001">
                         <button type="button" class="input-clear-btn" onclick="clearInput('lookup-code')" aria-label="مسح" title="مسح">✕</button>
                     </div>
                     <button type="button" id="lookup-btn" onclick="lookupOrder()">بحث</button>
@@ -895,10 +895,10 @@
         <div id="payment-view" class="lookup-card" style="display:none;">
             <button type="button" class="back-link" onclick="showView('landing')">→ رجوع</button>
             <h2>الحصول على لينك الدفع</h2>
-            <p class="sub">اكتب كود الطلب (STU-P-...) اللي وصلك بعد التسجيل عشان تجيب لينك الدفع بتاع طلبك</p>
+            <p class="sub">اكتب كود الطلب (زي ST0001) اللي وصلك بعد التسجيل عشان تجيب لينك الدفع بتاع طلبك</p>
             <div class="lookup-row">
                 <div class="input-clear-wrap">
-                    <input type="text" id="payment-code" placeholder="مثال: STU-P-XXXX">
+                    <input type="text" id="payment-code" placeholder="مثال: ST0001">
                     <button type="button" class="input-clear-btn" onclick="clearInput('payment-code')" aria-label="مسح" title="مسح">✕</button>
                 </div>
                 <button type="button" id="payment-btn" onclick="lookupPaymentLink()">عرض</button>
@@ -1197,10 +1197,10 @@
         const subEl = document.getElementById('lookup-sub');
         if (lookupMode === 'receive'){
             titleEl.textContent = 'استلام الطلب';
-            subEl.textContent = 'اكتب كود الطلب (STU-P-...) أو كود الفاتورة (STP-2026-...) اللي وصلك عشان تستلم ملف طلبك';
+            subEl.textContent = 'اكتب كود الطلب (زي ST0001) اللي وصلك عشان تستلم ملف طلبك';
         } else {
             titleEl.textContent = 'استعلم عن حالة طلبك';
-            subEl.textContent = 'اكتب كود الطلب (STU-P-...) أو كود الفاتورة (STP-2026-...) اللي وصلك';
+            subEl.textContent = 'اكتب كود الطلب (زي ST0001) اللي وصلك';
         }
         // Remember-my-code convenience: if nothing's typed yet, prefill the last code
         // this browser searched/got.
@@ -1728,42 +1728,22 @@ applyTheme();
         promoCheckTimer = setTimeout(checkPromoCode, 600);
     });
 
-    // بيولّد رقم تسلسلي فريد باستخدام Firestore transaction، عشان لو طالبين بعتوا طلب في نفس اللحظة
-    // ما ياخدوش نفس الرقم (بدل الاعتماد على عدد الطلبات اللي ممكن يتقرأ قبل ما يتزامن)
-    async function nextSequentialNumber(prefix, counterId){
-        const counterRef = db.collection('counters').doc(counterId);
-        try{
-            const newCount = await db.runTransaction(async (transaction) => {
-                const doc = await transaction.get(counterRef);
-                if (doc.exists) {
-                    const next = (doc.data().count || 0) + 1;
-                    transaction.set(counterRef, { count: next }, { merge: true });
-                    return next;
-                }
-                return null; // العداد لسه معملوش؛ هنظبطه تحت أول مرة بس
-            });
-            if (newCount !== null) return prefix + String(newCount).padStart(4, '0');
-        }catch(e){ /* هنكمل على الخطة البديلة تحت */ }
-
-        // أول مرة بس: بنجيب أعلى رقم موجود فعليًا في الطلبات عشان منكررش أرقام قديمة
-        try{
-            const snap = await db.collection('orders')
-                .where('number', '>=', prefix).where('number', '<', prefix + '\uf8ff').get();
-            let max = 0;
-            snap.forEach(doc => {
-                const n = parseInt(String(doc.data().number || '').slice(prefix.length), 10);
-                if (!isNaN(n) && n > max) max = n;
-            });
-            const next = max + 1;
-            await counterRef.set({ count: next }, { merge: true });
-            return prefix + String(next).padStart(4, '0');
-        }catch(e2){
-            return prefix + Date.now().toString().slice(-6);
-        }
-    }
-
-    async function nextOrderNumber(){
-        return nextSequentialNumber('STU-P-', 'ordersSTU');
+    // رقم الطلب = ST + 4 أرقام (ST0001, ST0002, ...)
+    // بنحجز الرقم وبنسجّل الطلب في نفس الـ transaction (عملية واحدة ذرّية)، فمستحيل طلبين ياخدوا نفس الرقم
+    // حتى لو طالبين دوسوا "إرسال" في نفس اللحظة. العداد مشترك مع صفحة الأدمن (counters/ordersST).
+    const ORDER_PREFIX = 'ST';
+    const ORDER_COUNTER_ID = 'ordersST';
+    async function createOrderWithNumber(data){
+        const counterRef = db.collection('counters').doc(ORDER_COUNTER_ID);
+        const orderRef = db.collection('orders').doc();
+        return db.runTransaction(async (tx) => {
+            const snap = await tx.get(counterRef);
+            const next = (snap.exists ? (Number(snap.data().count) || 0) : 0) + 1;
+            const number = ORDER_PREFIX + String(next).padStart(4, '0');
+            tx.set(counterRef, { count: next }, { merge: true });
+            tx.set(orderRef, Object.assign({}, data, { number: number }));
+            return number;
+        });
     }
 
     document.getElementById('order-form').addEventListener('submit', async (e) => {
@@ -1812,10 +1792,7 @@ applyTheme();
         btn.disabled = true; btn.textContent = 'جاري الإرسال...';
 
         try{
-            const number = await nextOrderNumber();
-
             const data = {
-                number: number,
                 name: name,
                 contact: phone,
                 phone: phone,
@@ -1837,7 +1814,7 @@ applyTheme();
                 source: 'student-form',
                 created: new Date().toISOString()
             };
-            await db.collection('orders').add(data);
+            const number = await createOrderWithNumber(data);
 
             document.getElementById('t-status').textContent = 'تم الإرسال — بانتظار المراجعة';
             document.getElementById('t-status').classList.add('sent');
@@ -1927,7 +1904,7 @@ applyTheme();
             </div>`;
     }
 
-    // Renders an order document (matched by its STU-P-... code) into the result box.
+    // Renders an order document (matched by its ST#### code) into the result box.
     // Checks the order's own delivered-file link first; if that's empty but the order
     // was converted into an invoice (invoiceId), falls back to that invoice's link too —
     // so it doesn't matter which of the two places the admin set the link on.
@@ -2311,7 +2288,7 @@ applyTheme();
         input.addEventListener('keydown', (e) => { if (e.key === 'Enter'){ e.preventDefault(); confirm(); } });
     }
 
-    // Looks up either an order code (STU-P-...) or an auto-generated invoice code (STP-2026-...).
+    // Looks up either an order code (زي ST0001) or an auto-generated invoice code (STP-2026-...).
     // Tries the collection that matches the code's prefix first, then falls back to the other
     // collection so the student always gets a result even if they're not sure which kind of code they have.
     // Jumps from the "تم إرسال طلبك" success screen straight into the lookup view,
@@ -2375,7 +2352,7 @@ applyTheme();
         }
         btn.disabled = false; btn.textContent = 'بحث';
     }
-    // Looks up an order by its STU-P-... code and shows its payment link (set by
+    // Looks up an order by its ST#### code and shows its payment link (set by
     // the admin on the order itself, in the "رابط الدفع" field).
     async function lookupPaymentLink(){
         const raw = document.getElementById('payment-code').value.trim();
