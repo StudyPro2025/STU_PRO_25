@@ -1773,23 +1773,49 @@ applyTheme();
         promoCheckTimer = setTimeout(checkPromoCode, 600);
     });
 
-    // رقم الطلب = ST + 4 أرقام (ST0001, ST0002, ...)
-    // بنحجز الرقم وبنسجّل الطلب في نفس الـ transaction (عملية واحدة ذرّية)، فمستحيل طلبين ياخدوا نفس الرقم
-    // حتى لو طالبين دوسوا "إرسال" في نفس اللحظة. العداد مشترك مع صفحة الأدمن (counters/ordersST).
-    const ORDER_PREFIX = 'ST';
-    const ORDER_COUNTER_ID = 'ordersST';
-    async function createOrderWithNumber(data){
-        const counterRef = db.collection('counters').doc(ORDER_COUNTER_ID);
-        const orderRef = db.collection('orders').doc();
-        return db.runTransaction(async (tx) => {
-            const snap = await tx.get(counterRef);
-            const next = (snap.exists ? (Number(snap.data().count) || 0) : 0) + 1;
-            const number = ORDER_PREFIX + String(next).padStart(4, '0');
-            tx.set(counterRef, { count: next }, { merge: true });
-            tx.set(orderRef, Object.assign({}, data, { number: number }));
-            return number;
-        });
+    // رقم الطلب = ST + 4 أرقام عشوائية (زي ST1528).
+    // منع التكرار على 3 مستويات: (1) بنتأكد إن الرقم مش موجود في الطلبات ولا الفواتير،
+    // (2) بنحجز الرقم في عملية Firestore واحدة (transaction) مع تسجيل الطلب نفسه، فلو طالبين طلعلهم نفس الرقم في نفس اللحظة واحد بس بيكسب والتاني بيجرّب رقم تاني،
+    // (3) الحجز بيتخزن في counters/reserved_ST#### فالرقم عمره ما بيتاخد تاني حتى لو الطلب اتمسح.
+    function randomOrderDigits(digits){
+        const min = Math.pow(10, digits - 1), range = Math.pow(10, digits) - min;
+        let n;
+        if (window.crypto && crypto.getRandomValues){
+            const buf = new Uint32Array(1);
+            do { crypto.getRandomValues(buf); } while (buf[0] >= Math.floor(4294967296 / range) * range); // بدون انحياز
+            n = buf[0] % range;
+        } else {
+            n = Math.floor(Math.random() * range);
+        }
+        return String(min + n);
     }
+    async function orderNumberInUse(number){
+        const [o, i] = await Promise.all([
+            db.collection('orders').where('number', '==', number).limit(1).get(),
+            db.collection('invoices').where('number', '==', number).limit(1).get()
+        ]);
+        return !o.empty || !i.empty;
+    }
+    async function createOrderWithNumber(data){
+        // 4 أرقام الأول؛ لو المساحة (9000 رقم) قربت تخلص بنزوّد لـ 5 أرقام تلقائي
+        for (let attempt = 0; attempt < 60; attempt++){
+            const digits = attempt < 40 ? 4 : 5;
+            const number = ORDER_PREFIX + randomOrderDigits(digits);
+            if (await orderNumberInUse(number)) continue;
+            const reserveRef = db.collection('counters').doc('reserved_' + number);
+            const orderRef = db.collection('orders').doc();
+            const ok = await db.runTransaction(async (tx) => {
+                const snap = await tx.get(reserveRef);
+                if (snap.exists) return false;
+                tx.set(reserveRef, { type: 'order-number', created: new Date().toISOString() });
+                tx.set(orderRef, Object.assign({}, data, { number: number }));
+                return true;
+            });
+            if (ok) return number;
+        }
+        throw new Error('could-not-allocate-order-number');
+    }
+    const ORDER_PREFIX = 'ST';
 
     document.getElementById('order-form').addEventListener('submit', async (e) => {
         e.preventDefault();
