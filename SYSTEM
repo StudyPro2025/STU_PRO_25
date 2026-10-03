@@ -886,7 +886,7 @@ select.stamp-select:focus { border-style: solid; }
                 </div>
                 <button type="submit" class="login-submit">تسجيل الدخول</button>
             </form>
-            <a class="login-back" href="student.html">→ الرجوع لصفحة الطالب</a>
+            <a class="login-back" href="index.html">→ الرجوع لصفحة الطالب</a>
         </section>
     </div>
 </div>
