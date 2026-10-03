@@ -552,20 +552,20 @@
     .status-result.waiting,.status-result.new,.status-result.pending{ background:var(--amber-50); }
     
     /* ---- Student nav + dashboard ---- */
-    .snav{ display:none; position:sticky; top:0; z-index:40; margin:-48px -20px 28px; padding:12px 20px; background:color-mix(in srgb,var(--paper) 88%,transparent); backdrop-filter:blur(10px); border-bottom:1px solid var(--border); }
-    .snav-in{ max-width:1040px; margin:0 auto; display:flex; align-items:center; gap:6px; }
-    .snav-logo{ font-weight:800; font-size:17px; color:var(--ink-900); margin-left:14px; } .snav-logo span{ color:var(--teal-500); }
-    .snav-links{ display:flex; gap:2px; flex:1; }
-    .snav-links button{ border:none; background:none; font-family:inherit; font-weight:700; font-size:13.5px; color:var(--ink-500); padding:8px 12px; border-radius:9px; cursor:pointer; }
+    .snav{ display:none; position:sticky; top:0; z-index:40; margin:-48px -20px 22px; padding:10px 16px; background:color-mix(in srgb,var(--paper) 92%,transparent); backdrop-filter:blur(10px); border-bottom:1px solid var(--border); }
+    .snav-in{ max-width:1040px; margin:0 auto; display:flex; align-items:center; gap:8px; }
+    .snav-logo{ font-weight:800; font-size:18px; color:var(--ink-900); flex:1; } .snav-logo span{ color:var(--teal-500); }
+    .snav .theme-btn,.snav-burger{ width:42px; height:42px; border-radius:12px; border:1px solid var(--border); background:var(--surface); color:var(--ink-900); font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0; flex:0 0 auto; }
+    .snav-links{ display:none; position:absolute; top:calc(100% + 8px); left:12px; width:min(320px, calc(100vw - 24px)); max-height:calc(100vh - 90px); overflow-y:auto; flex-direction:column; gap:2px; background:var(--surface); border:1px solid var(--border); border-radius:16px; padding:10px; box-shadow:0 18px 50px rgba(6,10,20,.35); }
+    .snav-links.open{ display:flex; }
+    .snav-user{ display:flex; align-items:center; gap:10px; padding:8px 10px 12px; margin-bottom:6px; border-bottom:1px dashed var(--border); font-weight:800; font-size:14px; color:var(--ink-900); }
+    .snav-user span:last-child{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    .snav-links button{ display:flex; align-items:center; gap:12px; width:100%; text-align:right; border:none; background:none; font-family:inherit; font-weight:700; font-size:14.5px; color:var(--ink-700); padding:13px 12px; min-height:46px; border-radius:11px; cursor:pointer; }
+    .snav-links button .mi{ width:24px; text-align:center; font-size:18px; flex:0 0 auto; }
     .snav-links button:hover{ background:var(--surface-2); color:var(--ink-900); }
     .snav-links button.on{ color:var(--teal-600); background:var(--teal-50); }
-    .snav-burger{ display:none; border:1px solid var(--border); background:var(--surface); color:var(--ink-900); width:40px; height:40px; border-radius:10px; font-size:18px; cursor:pointer; margin-right:auto; }
-    @media (max-width:760px){
-        .snav-burger{ display:block; }
-        .snav-links{ display:none; position:absolute; top:100%; right:0; left:0; flex-direction:column; background:var(--surface); border-bottom:1px solid var(--border); padding:10px 20px 14px; }
-        .snav-links.open{ display:flex; } .snav-links button{ text-align:right; padding:12px; }
-        .snav-logo{ margin-left:0; }
-    }
+    .snav-links button.out{ color:var(--danger); margin-top:6px; border-top:1px dashed var(--border); border-radius:0 0 11px 11px; }
+    .snav-links button.out:hover{ background:var(--danger-bg); color:var(--danger); }
     .dash{ margin-bottom:34px; animation:riseIn .5s ease both; }
     .dash h2{ font-size:22px; color:var(--ink-900); margin-bottom:4px; } .dash .dsub{ color:var(--ink-500); font-size:13.5px; margin-bottom:18px; }
     .stats{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:22px; }
@@ -593,8 +593,6 @@
         .otable td{ display:flex; justify-content:space-between; border:none; padding:5px 0; } .otable td::before{ content:attr(data-l); color:var(--ink-500); font-weight:700; }
     }
     
-    .snav-in{ padding-left:210px; }
-    @media (max-width:760px){ .snav-in{ padding-left:130px; } #user-name{ display:none; } .snav-burger{ margin-right:auto; } }
     
     /* ---- Multi-step order form ---- */
     .wiz{ display:flex; align-items:center; margin:2px 0 22px; }
@@ -645,8 +643,7 @@
     </head>
     <body>
     <div class="bg-grid"></div>
-    <div class="topbar">
-        <div class="user-chip" id="user-chip"><button type="button" class="who" onclick="openProfile()" title="حسابي"><span class="av" id="user-av">؟</span><span id="user-name"></span></button><button type="button" onclick="studentLogout()">خروج</button></div>
+    <div class="topbar" id="topbar">
         <button type="button" class="theme-btn" onclick="toggleTheme()" title="تبديل الوضع الليلي/النهاري">🌙</button>
     </div>
     
@@ -654,16 +651,19 @@
 
         <nav class="snav" id="snav"><div class="snav-in">
             <span class="snav-logo">Study<span>Pro</span></span>
+            <button type="button" class="theme-btn" onclick="toggleTheme()" title="تبديل المظهر">🌙</button>
+            <button type="button" class="snav-burger" onclick="toggleSnav(event)" aria-label="القائمة" aria-expanded="false">☰</button>
             <div class="snav-links" id="snav-links">
-                <button type="button" data-v="landing" onclick="navGo('landing')">الرئيسية</button>
-                <button type="button" data-v="orders" onclick="navGo('orders')">طلباتي</button>
-                <button type="button" data-v="form" onclick="navGo('form')">طلب جديد</button>
-                <button type="button" data-v="lookup" onclick="navGo('lookup')">متابعة طلب</button>
-                <button type="button" data-v="payment" onclick="navGo('payment')">الدفع</button>
-                <button type="button" data-v="rating" onclick="navGo('rating')">قيّم خدمتنا</button>
-                <button type="button" onclick="openProfile()">حسابي</button>
+                <div class="snav-user"><span class="av" id="user-av">؟</span><span id="user-name"></span></div>
+                <button type="button" data-v="landing" onclick="navGo('landing')"><span class="mi">🏠</span>الرئيسية</button>
+                <button type="button" data-v="orders" onclick="navGo('orders')"><span class="mi">📋</span>طلباتي</button>
+                <button type="button" data-v="form" onclick="navGo('form')"><span class="mi">📝</span>تسجيل طلب جديد</button>
+                <button type="button" data-v="lookup" onclick="navGo('lookup')"><span class="mi">🔍</span>استعلام واستلام طلب</button>
+                <button type="button" data-v="payment" onclick="navGo('payment')"><span class="mi">💳</span>الحصول على لينك الدفع</button>
+                <button type="button" data-v="rating" onclick="navGo('rating')"><span class="mi">⭐</span>قيّم خدمتنا</button>
+                <button type="button" onclick="openProfile()"><span class="mi">👤</span>حسابي</button>
+                <button type="button" class="out" onclick="closeSnav();studentLogout()"><span class="mi">🚪</span>تسجيل الخروج</button>
             </div>
-            <button type="button" class="snav-burger" onclick="document.getElementById('snav-links').classList.toggle('open')" aria-label="القائمة">☰</button>
         </div></nav>
 
         <div class="install-bar" id="install-bar">
@@ -733,29 +733,10 @@
                     <div class="stat"><small><i></i>مكتملة</small><b id="st-done">–</b></div>
                 </div>
                 <div class="orders-box" id="my-orders">
-                    <div class="orders-head"><h3>آخر الطلبات</h3><button type="button" class="btn-sm" onclick="showView('form')">+ طلب جديد</button></div>
+                    <div class="orders-head"><h3>آخر الطلبات</h3></div>
                     <div id="orders-body"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
                 </div>
             </div>
-            <div class="landing">
-                <button class="landing-btn primary" onclick="showView('form')">
-                    <span class="lb-icon">📝</span>
-                    <span class="lb-text"><b>تسجيل طلب جديد</b><small>ابعتلنا تفاصيل خدمتك</small></span>
-                </button>
-                <button class="landing-btn" onclick="showView('lookup')">
-                    <span class="lb-icon">🔍</span>
-                    <span class="lb-text"><b>استعلام واستلام طلب</b><small>اعرف حالة طلبك واستلم ملفه لو خلص</small></span>
-                </button>
-                <button class="landing-btn" onclick="showView('payment')">
-                    <span class="lb-icon">💳</span>
-                    <span class="lb-text"><b>الحصول على لينك الدفع</b><small>ادخل كود طلبك واستلم لينك الدفع</small></span>
-                </button>
-                <button class="landing-btn" onclick="showView('rating')">
-                    <span class="lb-icon">⭐</span>
-                    <span class="lb-text"><b>قيّم خدمتنا</b><small>رأيك بيهمنا وبيساعدنا نطوّر خدمتنا</small></span>
-                </button>
-            </div>
-
             <div class="public-reviews">
                 <h3>⭐ آراء طلاب جربوا خدمتنا</h3>
                 <div id="public-reviews-list"><p class="pr-empty">بنجهز الآراء...</p></div>
@@ -987,9 +968,9 @@
                 <button type="button" class="copy-btn" id="copy-btn" onclick="copyOrderCode()" title="نسخ الكود">📋</button>
             </div>
             <div class="success-links" style="margin-top:12px;">
-                <button class="again-btn" onclick="goToLookupFromSuccess()">🔍 استعلم عن الطلب</button>
-                <button class="again-btn" onclick="resetForm(); showView('form');">إرسال طلب جديد</button>
-                <button class="again-btn" onclick="showView('landing')">الرئيسية</button>
+                <button class="again-btn" onclick="goToLookupFromSuccess()">🔍 متابعة الطلب</button>
+                <button class="again-btn" onclick="goToPaymentFromSuccess()">💳 الحصول على لينك الدفع</button>
+                <button class="again-btn" onclick="showView('landing')">🏠 الرئيسية</button>
             </div>
         </div>
 
@@ -1252,6 +1233,7 @@ applyTheme();
         showView('landing');
     }
     function studentLogout(){
+        try{ closeSnav(); }catch(e){}
         try{ auth.signOut(); }catch(e){}
         currentStudent = null;
         try{ localStorage.removeItem(STUDENT_KEY); }catch(e){}
@@ -1261,8 +1243,8 @@ applyTheme();
     function applyStudent(){
         const logo = document.querySelector('#page-head img');
         if (logo) document.getElementById('auth-logo').src = logo.src;
-        const chip = document.getElementById('user-chip');
-        chip.style.display = currentStudent ? 'flex' : 'none';
+        const tb = document.getElementById('topbar');
+        if (tb) tb.style.display = currentStudent ? 'none' : 'flex';
         document.getElementById('snav').style.display = currentStudent ? 'block' : 'none';
         if (!currentStudent) stopOrders();
         if (!currentStudent) return;
@@ -1392,6 +1374,20 @@ applyTheme();
     // ---- Student dashboard: live orders by phone ----
     const BADGES = { waiting:['قيد المراجعة','b-warn'], accepted:['تم القبول','b-info'], in_progress:['قيد التنفيذ','b-info'], completed:['مكتمل','b-ok'], rejected:['مرفوض','b-bad'], cancelled:['ملغي','b-mute'] };
     let ordersUnsub = null;
+    function closeSnav(){
+        const l = document.getElementById('snav-links'); if (l) l.classList.remove('open');
+        const b = document.querySelector('.snav-burger'); if (b) b.setAttribute('aria-expanded','false');
+    }
+    function toggleSnav(ev){
+        if (ev) ev.stopPropagation();
+        const l = document.getElementById('snav-links');
+        const open = l.classList.toggle('open');
+        document.querySelector('.snav-burger').setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+    document.addEventListener('click', (e) => {
+        const l = document.getElementById('snav-links');
+        if (l && l.classList.contains('open') && !e.target.closest('#snav-links')) closeSnav();
+    });
     function navGo(v){
         document.getElementById('snav-links').classList.remove('open');
         if (v === 'orders'){ showView('landing'); setTimeout(() => document.getElementById('my-orders').scrollIntoView({behavior:'smooth', block:'start'}), 60); }
@@ -2228,6 +2224,12 @@ applyTheme();
     // collection so the student always gets a result even if they're not sure which kind of code they have.
     // Jumps from the "تم إرسال طلبك" success screen straight into the lookup view,
     // pre-filling the code the student just got and running the search right away.
+    function goToPaymentFromSuccess(){
+        const code = document.getElementById('success-ref').textContent.trim();
+        showView('payment');
+        document.getElementById('payment-code').value = (code && code !== '#\u2014') ? code : '';
+        if (code && code !== '#\u2014') lookupPaymentLink();
+    }
     function goToLookupFromSuccess(){
         const code = document.getElementById('success-ref').textContent.trim();
         showView('lookup', 'inquiry');
