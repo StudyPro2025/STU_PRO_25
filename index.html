@@ -680,6 +680,7 @@
                 <button type="button" data-v="lookup" onclick="navGo('lookup')"><span class="mi">🔍</span>استعلام واستلام طلب</button>
                 <button type="button" data-v="payment" onclick="navGo('payment')"><span class="mi">💳</span>الحصول على لينك الدفع</button>
                 <button type="button" data-v="rating" onclick="navGo('rating')"><span class="mi">⭐</span>قيّم خدمتنا</button>
+                <button type="button" onclick="openWallet()"><span class="mi">🪙</span>محفظة العملات والدعوات</button>
                 <button type="button" onclick="openProfile()"><span class="mi">👤</span>حسابي</button>
                 <button type="button" class="out" onclick="closeSnav();studentLogout()"><span class="mi">🚪</span>تسجيل الخروج</button>
             </div>
@@ -742,6 +743,11 @@
         </div>
 
         <div id="landing-view">
+        <div id="coins-card" style="margin:0 0 16px;padding:16px 18px;border-radius:16px;background:var(--surface);border:1px solid var(--border);display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+            <div style="font-size:30px;">🪙</div>
+            <div style="flex:1;min-width:180px;"><b>اكسب Coins مع StudyPro</b><div style="font-size:13px;color:var(--ink-500);">رصيدك الحالي: <b class="wc-bal">0</b> Coins — شارك رابطك مع أصدقائك واستبدل عملاتك بخصومات.</div></div>
+            <button type="button" class="telegram-btn" style="border:none;cursor:pointer;" onclick="openWallet()">شارك الآن / المكافآت</button>
+        </div>
             <div class="dash" id="dash">
                 <h2>مرحبًا، <span id="dash-name"></span></h2>
                 <p class="dsub">دي نظرة سريعة على طلباتك وحالتها دلوقتي.</p>
@@ -1017,6 +1023,7 @@
         <button type="button" class="submit-btn" id="pf-save" onclick="saveProfile()">حفظ التعديلات</button>
         <div class="pf-foot"><button type="button" class="out" onclick="closeOv('profile-ov');studentLogout()">تسجيل الخروج</button></div>
     </div></div>
+    <div class="ov" id="wallet-ov"><div class="pane" id="wallet-pane"></div></div>
     <div class="toast" id="toast"></div>
 
     <script src="https://www.gstatic.com/firebasejs/12.16.0/firebase-app-compat.js"></script>
@@ -2766,5 +2773,200 @@ applyTheme();
     updateTicket();
     showView('landing');
     </script>
-    </body>
+    <script>
+// ===== نظام الدعوات والعملات (Referral & Rewards) =====
+(function(){
+    const FV = firebase.firestore.FieldValue, iso = () => new Date().toISOString();
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const RS = 'sp_ref', DV = 'sp_dev', MC = 'sp_mycode';
+    const lget = k => { try{ return localStorage.getItem(k); }catch(e){ return null; } };
+    const lset = (k, v) => { try{ localStorage.setItem(k, v); }catch(e){} };
+    const ldel = k => { try{ localStorage.removeItem(k); }catch(e){} };
+    const rnd = n => { const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; const b = new Uint32Array(n); crypto.getRandomValues(b); return Array.from(b, x => a[x % a.length]).join(''); };
+    const dev = () => { let d = lget(DV); if (!d){ d = rnd(10) + Date.now().toString(36); lset(DV, d); } return d; };
+    const pj = k => { try{ return JSON.parse(lget(k) || 'null'); }catch(e){ return null; } };
+    const pk = p => String(p || '').replace(/\D/g, '').slice(-10);
+    let W = { code: '', camps: [], rewards: [], bal: 0 };
+
+    // 1) تسجيل الزيارة من رابط الدعوة (?ref=كود&c=الحملة). لو الحملة شغالة بيتسجل الزائر مرة واحدة لكل جهاز، والضغطات المتكررة/الريفرش مبتتحسبش
+    async function trackVisit(code, cid){
+        const cs = await db.collection('refCampaigns').doc(cid).get();
+        if (!cs.exists || cs.data().status !== 'active') return null;
+        const camp = cs.data();
+        if (lget(MC) === code) return camp; // مفيش دعوة لنفسك
+        const ref = db.collection('refVisits').doc(cid + '_' + code + '_' + dev()), snap = await ref.get();
+        if (!snap.exists){
+            let src = 'مباشر'; try{ if (document.referrer) src = new URL(document.referrer).hostname; }catch(e){}
+            await ref.set({ campaignId: cid, code, deviceId: dev(), hits: 1, first: iso(), last: iso(), status: 'visited', device: /Mobi|Android|iPhone/i.test(navigator.userAgent) ? 'موبايل' : 'كمبيوتر', source: src, loggedIn: !!currentStudent });
+        } else if (Date.now() - new Date(snap.data().last).getTime() > 30 * 60 * 1000){
+            await ref.update({ hits: FV.increment(1), last: iso() });
+        }
+        if (camp.trigger === 'visit') await grant(cid, code, null);
+        return camp;
+    }
+
+    // 2) منح العملات: عملية Firestore واحدة (transaction) بتتأكد من الحدود والتكرار وبتسجّل العملية في سجل العملات
+    async function grant(cid, code, visitor){
+        const q = await db.collection('students').where('refCode', '==', code).limit(1).get();
+        if (q.empty) return 'no-referrer';
+        const rDoc = q.docs[0];
+        if (visitor && (rDoc.id === visitor.id || (pk(rDoc.data().phone) && pk(rDoc.data().phone) === pk(visitor.phone)))) return 'self';
+        const cRef = db.collection('refCampaigns').doc(cid), vRef = db.collection('refVisits').doc(cid + '_' + code + '_' + dev());
+        const cd = db.collection('refClaims').doc(cid + '_d_' + dev()), cu = visitor ? db.collection('refClaims').doc(cid + '_u_' + visitor.id) : null;
+        return db.runTransaction(async tx => {
+            const [c, r, v, d, u] = await Promise.all([tx.get(cRef), tx.get(rDoc.ref), tx.get(vRef), tx.get(cd), cu ? tx.get(cu) : Promise.resolve(null)]);
+            if (!c.exists || c.data().status !== 'active') return 'inactive';
+            if (d.exists || (u && u.exists)){ if (v.exists && v.data().status === 'visited') tx.update(vRef, { status: 'duplicate' }); return 'duplicate'; }
+            const camp = c.data(), coins = camp.coins || 0, earned = (r.data().refEarned || {})[cid] || 0;
+            if ((camp.maxReferrals && (camp.successCount || 0) >= camp.maxReferrals) || (camp.maxPerStudent && earned + coins > camp.maxPerStudent)) return 'cap';
+            tx.set(cd, { t: iso() }); if (cu) tx.set(cu, { t: iso() });
+            tx.set(vRef, { campaignId: cid, code, deviceId: dev(), status: 'rewarded', reward: coins, rewardedAt: iso(), ...(visitor ? { visitorId: visitor.id, visitorName: visitor.name } : {}), ...(v.exists ? {} : { first: iso(), last: iso(), hits: 1 }) }, { merge: true });
+            tx.update(rDoc.ref, { coins: FV.increment(coins), totalEarned: FV.increment(coins), ['refEarned.' + cid]: FV.increment(coins) });
+            tx.update(cRef, { successCount: FV.increment(1), coinsGiven: FV.increment(coins) });
+            tx.set(db.collection('coinTx').doc(), { studentId: rDoc.id, studentName: r.data().name || '', amount: coins, type: 'referral', reason: 'دعوة ناجحة — ' + (camp.name || ''), campaignId: cid, visitKey: vRef.id, balanceAfter: (r.data().coins || 0) + coins, created: iso(), seen: false });
+            return 'ok';
+        });
+    }
+
+    // 3) بعد تسجيل الدخول: كود الدعوة الخاص بالطالب + احتساب التسجيل لو الحساب جديد + إشعارات العملات
+    async function afterSession(u){
+        try{
+            const ref = db.collection('students').doc(u.id), snap = await ref.get(); if (!snap.exists) return;
+            const s = snap.data();
+            if (!s.refCode){
+                let code; for (let i = 0; i < 6; i++){ code = 'STP-' + rnd(5); if ((await db.collection('students').where('refCode', '==', code).limit(1).get()).empty) break; }
+                await ref.update({ refCode: code }); s.refCode = code;
+            }
+            lset(MC, s.refCode); W.code = s.refCode; setBal(s.coins || 0);
+            const pend = pj(RS);
+            if (pend && !pend.uid){
+                const isNew = s.created && Date.now() - new Date(s.created).getTime() < 10 * 60 * 1000;
+                if (!isNew || s.refFrom || s.refCode === pend.code){ ldel(RS); }   // حساب قديم/نفس الشخص: مفيش مكافأة
+                else {
+                    pend.uid = u.id; lset(RS, JSON.stringify(pend));
+                    await ref.update({ refFrom: pend.code + ':' + pend.cid });
+                    const vRef = db.collection('refVisits').doc(pend.cid + '_' + pend.code + '_' + dev()), vs = await vRef.get();
+                    if (vs.exists && vs.data().status === 'visited') await vRef.update({ status: 'registered', visitorId: u.id, visitorName: s.name || '', regAt: iso() });
+                    const c = await db.collection('refCampaigns').doc(pend.cid).get();
+                    if (c.exists && c.data().trigger === 'register'){ await grant(pend.cid, pend.code, { id: u.id, name: s.name, phone: s.phone }); ldel(RS); }
+                    else if (!c.exists || c.data().trigger === 'visit') ldel(RS);
+                }
+            }
+            const n = await db.collection('coinTx').where('studentId', '==', u.id).where('seen', '==', false).get();
+            n.forEach(d => { const t = d.data(); setTimeout(() => showToast(t.type === 'referral' ? '🎉 مبروك! حصلت على +' + t.amount + ' Coins بسبب دعوة ناجحة.' : 'تم تعديل رصيدك ' + (t.amount > 0 ? '+' : '') + t.amount + ' Coins', 5000), 800); d.ref.update({ seen: true }); });
+        }catch(e){ console.error('referral', e); }
+    }
+    function setBal(b){ W.bal = b; document.querySelectorAll('.wc-bal').forEach(el => el.textContent = b); }
+
+    // الحملة اللي شرطها "أول طلب": بتتحسب لما المدعو يعمل طلب
+    async function orderHook(){
+        const pend = pj(RS); if (!pend || !pend.uid || !currentStudent || pend.uid !== currentStudent.id) return;
+        const c = await db.collection('refCampaigns').doc(pend.cid).get();
+        if (c.exists && c.data().trigger === 'order') await grant(pend.cid, pend.code, { id: currentStudent.id, name: currentStudent.name, phone: currentStudent.phone });
+        ldel(RS);
+    }
+
+    // 4) محفظة الطالب
+    window.openWallet = async function(){
+        const l = document.getElementById('snav-links'); if (l) l.classList.remove('open');
+        const pane = document.getElementById('wallet-pane');
+        const head = '<div class="pane-h"><h3>🪙 محفظة العملات</h3><button type="button" class="x" onclick="closeOv(\'wallet-ov\')">✕</button></div>';
+        pane.innerHTML = head + '<p class="hint">بنحمّل...</p>'; openOv('wallet-ov');
+        try{
+            const id = currentStudent.id;
+            const [sd, cs, rs, rd, tx] = await Promise.all([db.collection('students').doc(id).get(), db.collection('refCampaigns').where('status', '==', 'active').get(), db.collection('rewards').where('active', '==', true).get(), db.collection('redemptions').where('studentId', '==', id).get(), db.collection('coinTx').where('studentId', '==', id).get()]);
+            const s = sd.data() || {}; W.code = s.refCode || W.code; setBal(s.coins || 0);
+            W.camps = cs.docs.map(d => ({ id: d.id, ...d.data() })); W.rewards = rs.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => a.coins - b.coins);
+            const codes = rd.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (b.created || '').localeCompare(a.created || ''));
+            const txs = tx.docs.map(d => d.data()).sort((a, b) => (b.created || '').localeCompare(a.created || '')).slice(0, 15);
+            const box = 'background:var(--surface-2,rgba(128,128,128,.1));border:1px solid var(--border);border-radius:12px;padding:12px 14px;margin:10px 0;';
+            const sel = W.camps.length > 1 ? '<select id="wl-camp" onchange="walLink()" style="width:100%;margin-bottom:8px;">' + W.camps.map(c => '<option value="' + c.id + '">' + esc(c.name) + '</option>').join('') + '</select>' : '';
+            pane.innerHTML = head + `
+              <div style="${box}text-align:center;"><div style="font-size:12px;color:var(--ink-500);">رصيدك الحالي</div><div style="font-size:34px;font-weight:800;">${s.coins || 0} <small style="font-size:14px;">Coins</small></div>
+                <div style="font-size:12px;color:var(--ink-500);">اكتسبت ${s.totalEarned || 0} • استخدمت ${s.totalSpent || 0}</div></div>
+              <h4>🤝 ادعُ أصدقاءك واكسب Coins</h4>
+              ${W.camps.length ? `<div style="${box}">${sel}<div id="wl-desc" style="font-size:13px;margin-bottom:8px;"></div>
+                <input type="text" id="wl-link" readonly dir="ltr" onclick="this.select()" style="width:100%;margin-bottom:8px;">
+                <div style="display:flex;gap:6px;flex-wrap:wrap;">
+                  <button type="button" class="telegram-btn" style="border:none;cursor:pointer;" onclick="walShare('wa')">WhatsApp</button>
+                  <button type="button" class="telegram-btn" style="border:none;cursor:pointer;" onclick="walShare('fb')">Facebook</button>
+                  <button type="button" class="telegram-btn" style="border:none;cursor:pointer;" onclick="walShare('tg')">Telegram</button>
+                  <button type="button" class="telegram-btn" style="border:none;cursor:pointer;" onclick="walShare('copy')">📋 نسخ رابط الدعوة (Instagram وغيره)</button></div></div>` : '<p class="hint">مفيش حملات دعوات شغالة حاليًا.</p>'}
+              <h4>🎁 المكافآت المتاحة</h4>
+              ${W.rewards.map(r => `<div style="${box}display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><div style="flex:1;min-width:150px;"><b>${r.coins} Coins ← خصم ${r.discount} جنيه</b><div style="font-size:12px;color:var(--ink-500);">${esc(r.name)}${r.minOrder ? ' • للطلبات ' + r.minOrder + ' جنيه أو أكثر' : ''}${(r.services || []).length ? ' • خدمات محددة' : ''}</div></div>
+                <button type="button" class="telegram-btn" style="border:none;cursor:pointer;${(s.coins || 0) < r.coins ? 'opacity:.45;' : ''}" ${(s.coins || 0) < r.coins ? 'disabled' : ''} onclick="walRedeem('${r.id}')">استبدال</button></div>`).join('') || '<p class="hint">مفيش مكافآت متاحة حاليًا.</p>'}
+              ${codes.length ? '<h4>🎟️ أكوادك</h4>' + codes.map(c => { const st = (c.status === 'available' && c.expires && new Date(c.expires) < new Date()) ? 'expired' : c.status; return `<div style="${box}display:flex;gap:8px;align-items:center;flex-wrap:wrap;"><b dir="ltr" style="font-family:monospace;">${esc(c.id)}</b><span style="flex:1;font-size:12px;">خصم ${c.discount} جنيه • ${({available:'متاح',used:'مستخدم',expired:'منتهي',cancelled:'ملغي'})[st] || st}${c.expires ? ' • حتى ' + new Date(c.expires).toLocaleDateString('en-GB') : ''}</span>${st === 'available' ? `<button type="button" class="telegram-btn" style="border:none;cursor:pointer;" onclick="navigator.clipboard&&navigator.clipboard.writeText('${c.id}');showToast('تم نسخ الكود')">📋</button>` : ''}</div>`; }).join('') : ''}
+              <h4>📒 آخر العمليات</h4>
+              ${txs.map(t => `<div style="display:flex;gap:8px;padding:7px 0;border-bottom:1px dashed var(--border);font-size:13px;"><b style="color:${t.amount >= 0 ? 'var(--success,#16a34a)' : 'var(--danger,#dc2626)'};min-width:64px;">${t.amount >= 0 ? '+' : ''}${t.amount}</b><span style="flex:1;">${esc(t.reason || '')}<br><small style="color:var(--ink-500);">${new Date(t.created).toLocaleDateString('en-GB')} • الرصيد بعدها ${t.balanceAfter ?? ''}</small></span></div>`).join('') || '<p class="hint">لسه مفيش عمليات.</p>'}`;
+            if (W.camps.length) walLink();
+        }catch(e){ console.error(e); pane.innerHTML = head + '<p class="hint">مقدرناش نحمّل المحفظة دلوقتي، جرب تاني بعد شوية.</p>'; }
+    };
+    function curCamp(){ const el = document.getElementById('wl-camp'); return W.camps.find(c => c.id === (el ? el.value : (W.camps[0] || {}).id)) || W.camps[0]; }
+    function curLink(){ const c = curCamp(); return location.origin + location.pathname + '?ref=' + encodeURIComponent(W.code) + '&c=' + encodeURIComponent(c.id); }
+    window.walLink = function(){ const c = curCamp(); if (!c) return; document.getElementById('wl-link').value = curLink(); document.getElementById('wl-desc').textContent = (c.desc || c.name) + ' — ' + c.coins + ' Coins لكل دعوة ناجحة'; };
+    window.walShare = function(k){
+        const u = curLink(), t = (curCamp().desc || curCamp().name || 'StudyPro') + ' ' , e = encodeURIComponent;
+        if (k === 'copy'){ (navigator.clipboard ? navigator.clipboard.writeText(u) : Promise.reject()).then(() => showToast('تم نسخ رابط الدعوة')).catch(() => { document.getElementById('wl-link').select(); showToast('انسخ الرابط من الخانة'); }); return; }
+        window.open(k === 'wa' ? 'https://wa.me/?text=' + e(t + u) : k === 'fb' ? 'https://www.facebook.com/sharer/sharer.php?u=' + e(u) : 'https://t.me/share/url?url=' + e(u) + '&text=' + e(t), '_blank', 'noopener');
+    };
+    window.walRedeem = async function(rid){
+        if (!confirm('تأكيد استبدال العملات بالمكافأة؟')) return;
+        const rw = W.rewards.find(r => r.id === rid); if (!rw) return;
+        for (let i = 0; i < 4; i++){
+            const code = 'SP-REWARD-' + rnd(5), sRef = db.collection('students').doc(currentStudent.id), dRef = db.collection('redemptions').doc(code), rRef = db.collection('rewards').doc(rid);
+            try{
+                const res = await db.runTransaction(async tx => {
+                    const [s, d, r] = await Promise.all([tx.get(sRef), tx.get(dRef), tx.get(rRef)]);
+                    if (d.exists) return 'retry';
+                    if (!r.exists || !r.data().active) return 'gone';
+                    const x = r.data(), bal = s.data().coins || 0; if (bal < x.coins) return 'poor';
+                    tx.update(sRef, { coins: FV.increment(-x.coins), totalSpent: FV.increment(x.coins) });
+                    tx.set(dRef, { rewardId: rid, rewardName: x.name, studentId: currentStudent.id, studentName: currentStudent.name || '', coins: x.coins, discount: x.discount, minOrder: x.minOrder || 0, services: x.services || [], status: 'available', created: iso(), expires: new Date(Date.now() + (x.days || 30) * 86400000).toISOString() });
+                    tx.set(db.collection('coinTx').doc(), { studentId: currentStudent.id, studentName: currentStudent.name || '', amount: -x.coins, type: 'redeem', reason: 'استبدال بخصم ' + x.discount + ' جنيه — ' + code, balanceAfter: bal - x.coins, created: iso(), seen: true });
+                    return 'ok';
+                });
+                if (res === 'retry') continue;
+                if (res === 'poor') return showToast('رصيدك مش كفاية');
+                if (res === 'gone') return showToast('المكافأة دي مبقتش متاحة');
+                showToast('تم استبدال ' + rw.coins + ' Coins بنجاح والحصول على خصم ' + rw.discount + ' جنيه'); return openWallet();
+            }catch(e){ console.error(e); return showToast('حصلت مشكلة، جرب تاني'); }
+        }
+    };
+
+    // 5) ربط بالنظام الحالي من غير ما نغيّر وظايفه
+    const _ss = window.startSession; window.startSession = function(u){ _ss(u); afterSession(u); };
+    const _co = window.createOrderWithNumber; window.createOrderWithNumber = async function(d){ const n = await _co(d); orderHook().catch(() => {}); return n; };
+    const _cp = window.checkPromoCode;
+    window.checkPromoCode = async function(){
+        const code = promoInput.value.trim().toUpperCase();
+        if (!code.startsWith('SP-REWARD-')) return _cp();
+        const st = promoStatusEl; st.classList.remove('ok', 'bad'); st.classList.add('show'); st.textContent = 'بنتأكد من الكود...';
+        try{
+            const d = await db.collection('redemptions').doc(code).get(), r = d.exists ? d.data() : null; let m = '';
+            if (!r) m = 'الكود ده مش موجود'; else if (!currentStudent || r.studentId !== currentStudent.id) m = 'الكود ده مش بتاعك';
+            else if (r.status !== 'available') m = 'الكود ده ' + ({ used: 'اتستخدم قبل كده', expired: 'منتهي', cancelled: 'ملغي' }[r.status] || 'مش متاح');
+            else if (r.expires && new Date(r.expires) < new Date()) m = 'الكود ده منتهي الصلاحية';
+            if (m){ st.textContent = m; st.classList.add('bad'); }
+            else { st.textContent = '🎉 كود مكافأة صالح: خصم ' + r.discount + ' جنيه' + (r.minOrder ? ' (للطلبات ' + r.minOrder + ' جنيه أو أكثر)' : '') + '، هيتطبق بعد ما الإدارة تراجع طلبك'; st.classList.add('ok'); }
+        }catch(e){ st.classList.remove('show'); }
+    };
+
+    // 6) التقاط رابط الدعوة عند فتح الصفحة
+    (function(){
+        const q = new URLSearchParams(location.search), code = (q.get('ref') || '').toUpperCase(), cid = q.get('c');
+        if (!code || !cid) return;
+        lset(RS, JSON.stringify({ code, cid, t: Date.now() }));
+        try{ history.replaceState(null, '', location.pathname); }catch(e){}
+        trackVisit(code, cid).then(camp => {
+            if (!camp) { ldel(RS); return; }
+            if (camp.trigger !== 'register' && camp.url){ try{ if (new URL(camp.url).origin !== location.origin) location.replace(camp.url); }catch(e){} }
+        }).catch(e => console.error('ref visit', e));
+    })();
+
+    // لو الطالب متسجل دخول بالفعل لما الصفحة تفتح
+    if (typeof currentStudent !== 'undefined' && currentStudent) afterSession(currentStudent);
+})();
+</script>
+
+</body>
     </html>
