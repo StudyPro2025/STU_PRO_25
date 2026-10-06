@@ -1112,6 +1112,13 @@ body.sb-open{ overflow:hidden; }
                 <span class="nav-icon">👥</span> المستخدمين
                 <span class="nav-count" id="nav-count-students">0</span>
             </a>
+            <a href="#" class="nav-item" data-page="referrals">
+                <span class="nav-icon">🤝</span> الدعوات
+                <span class="nav-count" id="nav-count-referrals">0</span>
+            </a>
+            <a href="#" class="nav-item" data-page="coins">
+                <span class="nav-icon">🪙</span> العملات والمكافآت
+            </a>
             <a href="#" class="nav-item" data-page="promocodes">
                 <span class="nav-icon">🎫</span> البروموكود
                 <span class="nav-count" id="nav-count-promocodes">0</span>
@@ -1357,6 +1364,68 @@ body.sb-open{ overflow:hidden; }
                 </div>
             </section>
 
+            <!-- ============ Referrals ============ -->
+            <section id="page-referrals" class="page">
+                <div class="page-header">
+                    <div>
+                        <div class="page-eyebrow">REFERRALS</div>
+                        <h1>الدعوات</h1>
+                        <p><span id="ref-visitors">0</span> زائر فريد — <span id="ref-regs">0</span> تسجيل — معدل التحويل <b id="ref-rate">0%</b></p>
+                    </div>
+                    <button class="btn btn-primary" onclick="openCampaignModal()">+ دعوة جديدة</button>
+                </div>
+                <div class="table-card"><div class="table-wrap">
+                    <table class="data-table">
+                        <thead><tr><th>الحملة</th><th>شرط المكافأة</th><th>Coins/دعوة</th><th>الزيارات</th><th>التسجيلات</th><th>الناجحة</th><th>العملات الموزعة</th><th>الحالة</th><th>إجراءات</th></tr></thead>
+                        <tbody id="campaigns-tbody"></tbody>
+                    </table>
+                </div></div>
+                <h3 style="margin:26px 0 10px;">🏆 Top Referrers</h3>
+                <div class="table-card"><div class="table-wrap">
+                    <table class="data-table">
+                        <thead><tr><th>المركز</th><th>الطالب</th><th>الدعوات الناجحة</th><th>Coins</th></tr></thead>
+                        <tbody id="top-ref-tbody"></tbody>
+                    </table>
+                </div></div>
+            </section>
+
+            <!-- ============ Coins & Rewards ============ -->
+            <section id="page-coins" class="page">
+                <div class="page-header">
+                    <div>
+                        <div class="page-eyebrow">COINS</div>
+                        <h1>العملات والمكافآت</h1>
+                        <p><span id="coins-total-out">0</span> Coin في أرصدة الطلاب — <span id="coins-total-spent">0</span> اتصرفت</p>
+                    </div>
+                    <div class="page-header-actions">
+                        <button class="btn btn-ghost" onclick="openAdjustModal()">± تعديل رصيد يدوي</button>
+                        <button class="btn btn-primary" onclick="openRewardModal()">+ مكافأة جديدة</button>
+                    </div>
+                </div>
+                <h3 style="margin:6px 0 10px;">🎁 المكافآت</h3>
+                <div class="table-card"><div class="table-wrap">
+                    <table class="data-table">
+                        <thead><tr><th>المكافأة</th><th>Coins</th><th>الخصم</th><th>أقل قيمة طلب</th><th>الخدمات</th><th>الحالة</th><th>إجراءات</th></tr></thead>
+                        <tbody id="rewards-tbody"></tbody>
+                    </table>
+                </div></div>
+                <h3 style="margin:26px 0 10px;">🎟️ عمليات الاستبدال</h3>
+                <div class="table-card"><div class="table-wrap">
+                    <table class="data-table">
+                        <thead><tr><th>الكود</th><th>الطالب</th><th>المكافأة</th><th>Coins</th><th>الحالة</th><th>ينتهي</th><th>إجراءات</th></tr></thead>
+                        <tbody id="redemptions-tbody"></tbody>
+                    </table>
+                </div></div>
+                <h3 style="margin:26px 0 10px;">📒 سجل العملات (والتعديلات اليدوية)</h3>
+                <div class="filters"><input type="text" id="tx-search" class="filter-input" placeholder="ابحث باسم الطالب أو السبب..." oninput="refreshCoins()"></div>
+                <div class="table-card"><div class="table-wrap">
+                    <table class="data-table">
+                        <thead><tr><th>التاريخ</th><th>الطالب</th><th>العملية</th><th>Coins</th><th>السبب</th><th>الرصيد بعدها</th></tr></thead>
+                        <tbody id="tx-tbody"></tbody>
+                    </table>
+                </div></div>
+            </section>
+
             <!-- ============ Promocodes ============ -->
             <section id="page-promocodes" class="page">
                 <div class="page-header">
@@ -1585,6 +1654,72 @@ body.sb-open{ overflow:hidden; }
             <button class="modal-close" onclick="closeModal('view-student-modal')">&times;</button>
         </div>
         <div class="modal-body" id="view-student-content"></div>
+    </div>
+</div>
+
+<!-- ============ Referral / Rewards Modals ============ -->
+<div id="campaign-modal" class="modal-overlay">
+    <div class="modal-box modal-sm">
+        <div class="modal-head"><h2 id="campaign-modal-title">دعوة جديدة</h2><button class="modal-close" onclick="closeModal('campaign-modal')">&times;</button></div>
+        <form id="campaign-form" class="modal-body">
+            <input type="hidden" id="camp-id">
+            <div class="form-group"><label>اسم الحملة *</label><input type="text" id="camp-name" required placeholder="شارك صفحة StudyPro"></div>
+            <div class="form-group"><label>وصف الحملة</label><textarea id="camp-desc" rows="2" placeholder="شارك الرابط مع أصدقائك واحصل على 20 عملة."></textarea></div>
+            <div class="form-group"><label>الرابط المطلوب مشاركته (أي رابط)</label><input type="url" id="camp-url" dir="ltr" placeholder="https://facebook.com/studypro"></div>
+            <div class="form-row">
+                <div class="form-group"><label>Coins لكل دعوة *</label><input type="number" id="camp-coins" min="1" value="20" required></div>
+                <div class="form-group"><label>شرط المكافأة</label>
+                    <select id="camp-trigger">
+                        <option value="register">عند التسجيل من خلال الرابط (الافتراضي)</option>
+                        <option value="visit">عند زيارة / الضغط على الرابط</option>
+                        <option value="order">عند إنشاء أول طلب</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group"><label>أقصى Coins للطالب (0 = بلا حد)</label><input type="number" id="camp-max-student" min="0" value="1000"></div>
+                <div class="form-group"><label>أقصى دعوات ناجحة (0 = بلا حد)</label><input type="number" id="camp-max-refs" min="0" value="50"></div>
+            </div>
+            <div class="modal-foot"><button type="submit" class="btn btn-primary">حفظ</button><button type="button" class="btn btn-ghost" onclick="closeModal('campaign-modal')">إلغاء</button></div>
+        </form>
+    </div>
+</div>
+
+<div id="view-campaign-modal" class="modal-overlay">
+    <div class="modal-box" style="max-width:980px;width:96%;">
+        <div class="modal-head"><h2 id="vc-title">تفاصيل الحملة</h2><button class="modal-close" onclick="closeModal('view-campaign-modal')">&times;</button></div>
+        <div class="modal-body" id="view-campaign-content"></div>
+    </div>
+</div>
+
+<div id="reward-modal" class="modal-overlay">
+    <div class="modal-box modal-sm">
+        <div class="modal-head"><h2 id="reward-modal-title">مكافأة جديدة</h2><button class="modal-close" onclick="closeModal('reward-modal')">&times;</button></div>
+        <form id="reward-form" class="modal-body">
+            <input type="hidden" id="rw-id">
+            <div class="form-group"><label>اسم المكافأة *</label><input type="text" id="rw-name" required placeholder="خصم 50 جنيه"></div>
+            <div class="form-row">
+                <div class="form-group"><label>عدد العملات *</label><input type="number" id="rw-coins" min="1" required></div>
+                <div class="form-group"><label>قيمة الخصم (جنيه) *</label><input type="number" id="rw-discount" min="1" step="0.01" required></div>
+            </div>
+            <div class="form-group"><label>أقل قيمة طلب (0 = بلا حد)</label><input type="number" id="rw-min" min="0" value="0"></div>
+            <div class="form-group"><label>الخدمات المسموحة (بدون اختيار = كل الخدمات، Ctrl للاختيار المتعدد)</label><select id="rw-services" multiple size="5"></select></div>
+            <div class="form-group"><label>صلاحية الكود بعد الاستبدال (يوم)</label><input type="number" id="rw-days" min="1" value="30"></div>
+            <div class="form-group"><label><input type="checkbox" id="rw-active" checked style="width:auto;"> مفعّلة</label></div>
+            <div class="modal-foot"><button type="submit" class="btn btn-primary">حفظ</button><button type="button" class="btn btn-ghost" onclick="closeModal('reward-modal')">إلغاء</button></div>
+        </form>
+    </div>
+</div>
+
+<div id="adjust-modal" class="modal-overlay">
+    <div class="modal-box modal-sm">
+        <div class="modal-head"><h2>تعديل رصيد يدوي</h2><button class="modal-close" onclick="closeModal('adjust-modal')">&times;</button></div>
+        <form id="adjust-form" class="modal-body">
+            <div class="form-group"><label>الطالب *</label><select id="adj-student" required></select></div>
+            <div class="form-group"><label>عدد العملات (موجب = إضافة، سالب = خصم) *</label><input type="number" id="adj-amount" required></div>
+            <div class="form-group"><label>سبب التعديل * (بيتسجل في السجل)</label><input type="text" id="adj-reason" required></div>
+            <div class="modal-foot"><button type="submit" class="btn btn-primary">تنفيذ</button><button type="button" class="btn btn-ghost" onclick="closeModal('adjust-modal')">إلغاء</button></div>
+        </form>
     </div>
 </div>
 
@@ -1899,6 +2034,7 @@ let refunds = [];
 let ratings = [];
 let trash = [];
 let students = [];
+let refCampaigns = [], refVisits = [], coinTx = [], rewards = [], redemptions = [];
 let studentsLoadError = false;
 
 // Legit service catalog only
@@ -2024,6 +2160,8 @@ document.querySelectorAll('.nav-item').forEach(item => {
         if (page === 'refunds') refreshRefunds();
         if (page === 'ratings') refreshRatings();
         if (page === 'students') refreshStudents();
+        if (page === 'referrals') refreshReferrals();
+        if (page === 'coins') refreshCoins();
         if (page === 'trash') refreshTrash();
     });
 });
@@ -2073,6 +2211,16 @@ function initListeners() {
         refreshActivePage();
     }, err => { console.error('students listener', err); studentsLoadError = true; refreshActivePage(); });
 
+    const live = (col, order, setter) => {
+        const q = order ? db.collection(col).orderBy(order, 'desc') : db.collection(col);
+        q.onSnapshot(snap => { setter(snap.docs.map(d => ({ id: d.id, ...d.data() }))); refreshActivePage(); }, err => console.error(col + ' listener', err));
+    };
+    live('refCampaigns', 'created', v => refCampaigns = v);
+    live('refVisits', null, v => refVisits = v);
+    live('coinTx', 'created', v => coinTx = v);
+    live('rewards', 'created', v => rewards = v);
+    live('redemptions', 'created', v => redemptions = v);
+
     db.collection('trash').orderBy('deletedAt', 'desc').onSnapshot(snap => {
         trash = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         refreshActivePage();
@@ -2090,6 +2238,8 @@ function refreshActivePage() {
     if (id === 'refunds') refreshRefunds();
     if (id === 'ratings') refreshRatings();
     if (id === 'students') refreshStudents();
+    if (id === 'referrals') refreshReferrals();
+    if (id === 'coins') refreshCoins();
     if (id === 'trash') refreshTrash();
     updateNavCounts();
 }
@@ -2101,6 +2251,7 @@ function updateNavCounts() {
     setText('nav-count-refunds', refunds.length);
     setText('nav-count-ratings', ratings.length);
     setText('nav-count-students', students.length);
+    setText('nav-count-referrals', refCampaigns.length);
     setText('nav-count-trash', trash.length);
 }
 
@@ -2490,6 +2641,7 @@ function addServiceRow(prefix, item = null) {
 function applyPromoToRow(prefix, row, code) {
     code = (code || '').trim().toUpperCase();
     if (!code) return;
+    if (code.startsWith('SP-REWARD-')) return applyRewardToRow(prefix, row, code);
     const promo = promocodes.find(p => (p.code || '').toUpperCase() === code);
     if (!promo) { showToast('البروموكود غير موجود', 'error'); return; }
     if (!promo.unlimited && promo.validUntil && new Date(promo.validUntil) < new Date()) {
@@ -2872,6 +3024,9 @@ function applyPromoUsageDelta(deltaMap) {
     const updates = Object.keys(deltaMap)
         .filter(code => deltaMap[code] && (deltaMap[code].discount || deltaMap[code].count))
         .map(code => {
+            if (code.startsWith('SP-REWARD-')) { // كود مكافأة: يتعلّم مستخدم لما الطلب يتقبل، ويرجع متاح لو الربط اتلغى
+                return db.collection('redemptions').doc(code).update(deltaMap[code].count > 0 ? { status: 'used', usedAt: new Date().toISOString() } : { status: 'available', usedAt: FV.delete() }).catch(() => null);
+            }
             const promo = promocodes.find(p => (p.code || '').toUpperCase() === code);
             if (!promo) return null;
             const delta = deltaMap[code];
@@ -3748,6 +3903,247 @@ function viewStudent(id) {
             </div>
         </div>`;
     document.getElementById('view-student-modal').classList.add('active');
+}
+
+// =============================================================
+// Referral & Rewards (الدعوات والعملات والمكافآت)
+// =============================================================
+const FV = firebase.firestore.FieldValue;
+const TRIG = { visit: 'عند زيارة الرابط', register: 'عند التسجيل', order: 'عند أول طلب' };
+const VST = { visited: 'زار الرابط', registered: 'سجل حساب', rewarded: 'مكافأة ممنوحة', duplicate: 'مكررة', cancelled: 'مرفوضة' };
+const RST = { available: 'متاح', used: 'مستخدم', expired: 'منتهي', cancelled: 'ملغي' };
+const TXT = { referral: 'دعوة ناجحة', redeem: 'استبدال', manual: 'تعديل يدوي', reversal: 'إلغاء مكافأة', refund: 'استرجاع' };
+const fdate = d => d ? new Date(d).toLocaleDateString('ar-EG') : '—';
+const sName = code => { const s = students.find(x => x.refCode === code); return s ? s.name : code; };
+
+function campStats(cid) {
+    const v = refVisits.filter(x => x.campaignId === cid);
+    return { v, hits: v.reduce((s, x) => s + (x.hits || 1), 0), uniq: v.length,
+             reg: v.filter(x => x.visitorId).length, ok: v.filter(x => x.status === 'rewarded'),
+             refs: new Set(v.map(x => x.code)).size };
+}
+
+function refreshReferrals() {
+    setText('nav-count-referrals', refCampaigns.length);
+    const regs = refVisits.filter(x => x.visitorId).length;
+    setText('ref-visitors', refVisits.length); setText('ref-regs', regs);
+    setText('ref-rate', (refVisits.length ? Math.round(regs / refVisits.length * 100) : 0) + '%');
+    document.getElementById('campaigns-tbody').innerHTML = refCampaigns.length ? refCampaigns.map(c => {
+        const s = campStats(c.id), on = c.status === 'active';
+        return `<tr>
+            <td><b>${escapeHtml(c.name)}</b><div style="color:var(--ink-500);font-size:11.5px;">${escapeHtml(c.url || '')}</div></td>
+            <td>${TRIG[c.trigger] || ''}</td><td class="mono">${c.coins}</td>
+            <td>${s.hits} <span style="color:var(--ink-500);font-size:11.5px;">(${s.uniq} فريد)</span></td>
+            <td>${s.reg}</td><td>${s.ok.length}</td><td class="mono">${c.coinsGiven || 0}</td>
+            <td><span style="font-weight:700;color:${on ? 'var(--success)' : 'var(--ink-500)'};">${on ? '✅ شغالة' : '⏸️ موقوفة'}</span></td>
+            <td><div class="action-btns">
+                <button class="action-btn view" onclick="viewCampaign('${c.id}')" title="النتائج">📊</button>
+                <button class="action-btn edit" onclick="openCampaignModal('${c.id}')" title="تعديل">✏️</button>
+                <button class="action-btn" onclick="toggleCampaign('${c.id}')" title="${on ? 'إيقاف' : 'تشغيل'}">${on ? '⏸️' : '▶️'}</button>
+                <button class="action-btn delete" onclick="deleteCampaign('${c.id}')" title="حذف">🗑️</button>
+            </div></td></tr>`;
+    }).join('') : `<tr><td colspan="9">${emptyState('🤝', 'لسه معملتش حملات دعوات')}</td></tr>`;
+
+    const top = {};
+    refVisits.filter(x => x.status === 'rewarded').forEach(x => { const t = top[x.code] || (top[x.code] = { code: x.code, n: 0, c: 0 }); t.n++; t.c += x.reward || 0; });
+    const rows = Object.values(top).sort((a, b) => b.c - a.c).slice(0, 10);
+    document.getElementById('top-ref-tbody').innerHTML = rows.length ? rows.map((t, i) =>
+        `<tr><td>${i + 1}</td><td>${escapeHtml(sName(t.code))} <span class="code-chip" style="font-size:10px;">${escapeHtml(t.code)}</span></td><td>${t.n}</td><td class="mono">${t.c}</td></tr>`).join('')
+        : `<tr><td colspan="4">${emptyState('🏆', 'لسه مفيش دعوات ناجحة')}</td></tr>`;
+}
+
+function openCampaignModal(id) {
+    const c = id ? refCampaigns.find(x => x.id === id) : null;
+    document.getElementById('campaign-form').reset();
+    document.getElementById('campaign-modal-title').textContent = c ? 'تعديل الدعوة' : 'دعوة جديدة';
+    document.getElementById('camp-id').value = c ? c.id : '';
+    if (c) {
+        document.getElementById('camp-name').value = c.name || ''; document.getElementById('camp-desc').value = c.desc || '';
+        document.getElementById('camp-url').value = c.url || ''; document.getElementById('camp-coins').value = c.coins || 1;
+        document.getElementById('camp-trigger').value = c.trigger || 'register';
+        document.getElementById('camp-max-student').value = c.maxPerStudent || 0; document.getElementById('camp-max-refs').value = c.maxReferrals || 0;
+    }
+    document.getElementById('campaign-modal').classList.add('active');
+}
+document.getElementById('campaign-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const id = document.getElementById('camp-id').value;
+    const data = {
+        name: document.getElementById('camp-name').value.trim(), desc: document.getElementById('camp-desc').value.trim(),
+        url: document.getElementById('camp-url').value.trim(), coins: Math.max(1, parseInt(document.getElementById('camp-coins').value) || 1),
+        trigger: document.getElementById('camp-trigger').value,
+        maxPerStudent: parseInt(document.getElementById('camp-max-student').value) || 0, maxReferrals: parseInt(document.getElementById('camp-max-refs').value) || 0
+    };
+    const p = id ? db.collection('refCampaigns').doc(id).update(data)
+                 : db.collection('refCampaigns').add({ ...data, status: 'active', successCount: 0, coinsGiven: 0, created: new Date().toISOString() });
+    p.then(() => { closeModal('campaign-modal'); showToast('تم حفظ الدعوة', 'success'); }).catch(() => showToast('حدث خطأ أثناء الحفظ', 'error'));
+});
+function toggleCampaign(id) {
+    const c = refCampaigns.find(x => x.id === id); if (!c) return;
+    db.collection('refCampaigns').doc(id).update({ status: c.status === 'active' ? 'paused' : 'active' })
+        .then(() => showToast(c.status === 'active' ? 'اتوقفت الحملة، مفيش دعوات جديدة هتتحسب' : 'الحملة اشتغلت', 'success'));
+}
+function deleteCampaign(id) {
+    if (!confirm('حذف الحملة؟ سجل الزيارات والعملات الممنوحة هيفضل موجود.')) return;
+    db.collection('refCampaigns').doc(id).delete().then(() => showToast('تم حذف الحملة', 'success')).catch(() => showToast('حدث خطأ', 'error'));
+}
+
+function viewCampaign(id) {
+    const c = refCampaigns.find(x => x.id === id); if (!c) return;
+    const s = campStats(id);
+    const f = (l, v) => `<div class="doc-field"><span>${l}</span><br><b>${v}</b></div>`;
+    const parts = {};
+    s.v.forEach(x => {
+        const p = parts[x.code] || (parts[x.code] = { code: x.code, hits: 0, uniq: 0, reg: 0, ok: 0, coins: 0, last: '' });
+        p.hits += x.hits || 1; p.uniq++; if (x.visitorId) p.reg++;
+        if (x.status === 'rewarded') { p.ok++; p.coins += x.reward || 0; }
+        if ((x.last || '') > p.last) p.last = x.last || '';
+    });
+    const th = a => '<tr>' + a.map(h => `<th>${h}</th>`).join('') + '</tr>';
+    document.getElementById('vc-title').textContent = c.name;
+    document.getElementById('view-campaign-content').innerHTML = `
+      <div class="doc-sheet">
+        <div class="doc-section"><div class="doc-grid" style="grid-template-columns:repeat(3,1fr);">
+            ${f('المشاركون', s.refs)}${f('إجمالي الزيارات', s.hits)}${f('الزوار الفريدون', s.uniq)}
+            ${f('التسجيلات', s.reg)}${f('الدعوات الناجحة', s.ok.length)}${f('Coins الممنوحة', c.coinsGiven || 0)}
+        </div></div>
+        <div class="doc-section"><h4>المشاركون</h4><div class="table-wrap"><table class="data-table"><thead>${th(['الطالب', 'Referral ID', 'الزيارات', 'الفريدون', 'التسجيلات', 'الناجحة', 'Coins', 'آخر نشاط'])}</thead><tbody>
+          ${Object.values(parts).sort((a, b) => b.coins - a.coins).map(p => `<tr><td>${escapeHtml(sName(p.code))}</td><td class="mono">${escapeHtml(p.code)}</td><td>${p.hits}</td><td>${p.uniq}</td><td>${p.reg}</td><td>${p.ok}</td><td class="mono">${p.coins}</td><td>${fdate(p.last)}</td></tr>`).join('') || '<tr><td colspan="8" style="text-align:center;color:var(--ink-500);">لسه مفيش مشاركين</td></tr>'}
+        </tbody></table></div></div>
+        <div class="doc-section"><h4>الزيارات والتسجيلات</h4><div class="table-wrap"><table class="data-table"><thead>${th(['صاحب الدعوة', 'المدعو', 'تاريخ الدخول', 'الجهاز / المصدر', 'الحالة', 'Coins', ''])}</thead><tbody>
+          ${s.v.slice().sort((a, b) => (b.last || '').localeCompare(a.last || '')).slice(0, 150).map(x => `<tr>
+            <td>${escapeHtml(sName(x.code))}</td><td>${escapeHtml(x.visitorName || 'زائر (لم يسجل)')}</td><td>${fdate(x.first)}</td>
+            <td>${escapeHtml(x.device || '')} / ${escapeHtml(x.source || '')}</td><td>${VST[x.status] || x.status}</td><td class="mono">${x.status === 'rewarded' ? '+' + (x.reward || 0) : '—'}</td>
+            <td>${x.status === 'rewarded' ? `<button class="action-btn delete" title="إلغاء المكافأة (تلاعب)" onclick="cancelReward('${x.id}','${id}')">🚫</button>` : ''}</td></tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--ink-500);">لسه مفيش زيارات</td></tr>'}
+        </tbody></table></div></div>
+      </div>`;
+    document.getElementById('view-campaign-modal').classList.add('active');
+}
+
+async function cancelReward(vid, cid) {
+    if (!confirm('إلغاء المكافأة وخصم العملات من صاحب الدعوة؟ هتتسجل في السجل.')) return;
+    try {
+        await db.runTransaction(async tx => {
+            const vRef = db.collection('refVisits').doc(vid), v = await tx.get(vRef);
+            if (!v.exists || v.data().status !== 'rewarded') throw new Error('x');
+            const d = v.data(), st = students.find(s => s.refCode === d.code); if (!st) throw new Error('x');
+            const sRef = db.collection('students').doc(st.id), cRef = db.collection('refCampaigns').doc(d.campaignId);
+            const [s, c] = await Promise.all([tx.get(sRef), tx.get(cRef)]);
+            const amt = d.reward || 0, bal = (s.data().coins || 0) - amt;
+            tx.update(sRef, { coins: FV.increment(-amt), totalEarned: FV.increment(-amt), ['refEarned.' + d.campaignId]: FV.increment(-amt) });
+            tx.update(vRef, { status: 'cancelled' });
+            if (c.exists) tx.update(cRef, { successCount: FV.increment(-1), coinsGiven: FV.increment(-amt) });
+            tx.set(db.collection('coinTx').doc(), { studentId: st.id, studentName: st.name, amount: -amt, type: 'reversal', reason: 'إلغاء مكافأة دعوة (مراجعة الإدارة)', campaignId: d.campaignId, visitKey: vid, balanceAfter: bal, created: new Date().toISOString(), by: 'admin', seen: true });
+        });
+        showToast('تم إلغاء المكافأة وخصم العملات', 'success'); setTimeout(() => viewCampaign(cid), 400);
+    } catch (e) { console.error(e); showToast('تعذر إلغاء المكافأة', 'error'); }
+}
+
+// ---------- Rewards / redemptions / coin log ----------
+function refreshCoins() {
+    setText('coins-total-out', students.reduce((s, x) => s + (Number(x.coins) || 0), 0));
+    setText('coins-total-spent', students.reduce((s, x) => s + (Number(x.totalSpent) || 0), 0));
+    document.getElementById('rewards-tbody').innerHTML = rewards.length ? rewards.map(r => `<tr>
+        <td><b>${escapeHtml(r.name)}</b></td><td class="mono">${r.coins}</td><td class="mono">${r.discount}</td>
+        <td>${r.minOrder || '—'}</td><td>${(r.services || []).length ? escapeHtml(r.services.join('، ')) : 'كل الخدمات'}</td>
+        <td>${r.active ? '✅ مفعّلة' : '⏸️ موقوفة'}</td>
+        <td><div class="action-btns"><button class="action-btn edit" onclick="openRewardModal('${r.id}')">✏️</button>
+        <button class="action-btn" onclick="toggleReward('${r.id}')">${r.active ? '⏸️' : '▶️'}</button>
+        <button class="action-btn delete" onclick="deleteReward('${r.id}')">🗑️</button></div></td></tr>`).join('')
+        : `<tr><td colspan="7">${emptyState('🎁', 'لسه معملتش مكافآت')}</td></tr>`;
+    document.getElementById('redemptions-tbody').innerHTML = redemptions.length ? redemptions.slice(0, 100).map(r => {
+        const st = (r.status === 'available' && r.expires && new Date(r.expires) < new Date()) ? 'expired' : r.status;
+        return `<tr><td class="mono">${escapeHtml(r.id)}</td><td>${escapeHtml(r.studentName)}</td><td>${escapeHtml(r.rewardName)} (${r.discount})</td><td>${r.coins}</td>
+        <td>${RST[st] || st}</td><td>${fdate(r.expires)}</td>
+        <td>${r.status === 'available' ? `<button class="action-btn delete" title="إلغاء وإرجاع العملات" onclick="cancelRedemption('${r.id}')">🚫</button>` : ''}</td></tr>`;
+    }).join('') : `<tr><td colspan="7">${emptyState('🎟️', 'لسه محدش استبدل عملات')}</td></tr>`;
+    const q = (document.getElementById('tx-search')?.value || '').trim().toLowerCase();
+    const list = coinTx.filter(t => !q || (t.studentName || '').toLowerCase().includes(q) || (t.reason || '').toLowerCase().includes(q)).slice(0, 200);
+    document.getElementById('tx-tbody').innerHTML = list.length ? list.map(t => `<tr>
+        <td>${fdate(t.created)}</td><td>${escapeHtml(t.studentName)}</td><td>${TXT[t.type] || t.type}${t.by === 'admin' ? ' 🛡️' : ''}</td>
+        <td class="mono" style="color:${t.amount >= 0 ? 'var(--success)' : 'var(--danger)'};">${t.amount >= 0 ? '+' : ''}${t.amount}</td>
+        <td>${escapeHtml(t.reason || '')}</td><td class="mono">${t.balanceAfter ?? '—'}</td></tr>`).join('')
+        : `<tr><td colspan="6">${emptyState('📒', 'مفيش عمليات عملات')}</td></tr>`;
+}
+
+function openRewardModal(id) {
+    const r = id ? rewards.find(x => x.id === id) : null;
+    document.getElementById('reward-form').reset();
+    document.getElementById('reward-modal-title').textContent = r ? 'تعديل المكافأة' : 'مكافأة جديدة';
+    document.getElementById('rw-id').value = r ? r.id : '';
+    document.getElementById('rw-services').innerHTML = SERVICE_OPTIONS.map(s => `<option value="${escapeHtml(s)}" ${r && (r.services || []).includes(s) ? 'selected' : ''}>${escapeHtml(s)}</option>`).join('');
+    if (r) {
+        document.getElementById('rw-name').value = r.name; document.getElementById('rw-coins').value = r.coins; document.getElementById('rw-discount').value = r.discount;
+        document.getElementById('rw-min').value = r.minOrder || 0; document.getElementById('rw-days').value = r.days || 30; document.getElementById('rw-active').checked = !!r.active;
+    }
+    document.getElementById('reward-modal').classList.add('active');
+}
+document.getElementById('reward-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const id = document.getElementById('rw-id').value;
+    const data = {
+        name: document.getElementById('rw-name').value.trim(), coins: parseInt(document.getElementById('rw-coins').value) || 0,
+        discount: parseFloat(document.getElementById('rw-discount').value) || 0, minOrder: parseFloat(document.getElementById('rw-min').value) || 0,
+        services: Array.from(document.getElementById('rw-services').selectedOptions).map(o => o.value),
+        days: parseInt(document.getElementById('rw-days').value) || 30, active: document.getElementById('rw-active').checked
+    };
+    const p = id ? db.collection('rewards').doc(id).update(data) : db.collection('rewards').add({ ...data, created: new Date().toISOString() });
+    p.then(() => { closeModal('reward-modal'); showToast('تم حفظ المكافأة', 'success'); }).catch(() => showToast('حدث خطأ أثناء الحفظ', 'error'));
+});
+function toggleReward(id) { const r = rewards.find(x => x.id === id); if (r) db.collection('rewards').doc(id).update({ active: !r.active }); }
+function deleteReward(id) {
+    if (!confirm('حذف المكافأة؟ الأكواد اللي اتصدرت قبل كده هتفضل شغالة.')) return;
+    db.collection('rewards').doc(id).delete().then(() => showToast('تم الحذف', 'success'));
+}
+
+async function cancelRedemption(code) {
+    if (!confirm('إلغاء الكود وإرجاع العملات للطالب؟')) return;
+    try {
+        await db.runTransaction(async tx => {
+            const rRef = db.collection('redemptions').doc(code), r = await tx.get(rRef);
+            if (!r.exists || r.data().status !== 'available') throw new Error('x');
+            const d = r.data(), sRef = db.collection('students').doc(d.studentId), s = await tx.get(sRef);
+            tx.update(rRef, { status: 'cancelled' });
+            tx.update(sRef, { coins: FV.increment(d.coins), totalSpent: FV.increment(-d.coins) });
+            tx.set(db.collection('coinTx').doc(), { studentId: d.studentId, studentName: d.studentName, amount: d.coins, type: 'refund', reason: 'إلغاء كود مكافأة ' + code, balanceAfter: (s.data().coins || 0) + d.coins, created: new Date().toISOString(), by: 'admin', seen: true });
+        });
+        showToast('اتلغى الكود واترجعت العملات', 'success');
+    } catch (e) { console.error(e); showToast('تعذر الإلغاء', 'error'); }
+}
+
+function openAdjustModal() {
+    document.getElementById('adjust-form').reset();
+    document.getElementById('adj-student').innerHTML = '<option value="">-- اختر الطالب --</option>' + students.slice().sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'))
+        .map(s => `<option value="${escapeHtml(s.id)}">${escapeHtml(s.name || s.email)} — ${Number(s.coins) || 0} Coins</option>`).join('');
+    document.getElementById('adjust-modal').classList.add('active');
+}
+document.getElementById('adjust-form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const id = document.getElementById('adj-student').value, amt = parseInt(document.getElementById('adj-amount').value), reason = document.getElementById('adj-reason').value.trim();
+    if (!id || !amt || !reason) { showToast('اكمل كل الحقول', 'error'); return; }
+    try {
+        await db.runTransaction(async tx => {
+            const sRef = db.collection('students').doc(id), s = await tx.get(sRef);
+            tx.update(sRef, { coins: FV.increment(amt) });
+            tx.set(db.collection('coinTx').doc(), { studentId: id, studentName: s.data().name || '', amount: amt, type: 'manual', reason, balanceAfter: (s.data().coins || 0) + amt, created: new Date().toISOString(), by: 'admin', seen: false });
+        });
+        closeModal('adjust-modal'); showToast('تم تعديل الرصيد وتسجيله في السجل', 'success');
+    } catch (err) { console.error(err); showToast('تعذر تعديل الرصيد', 'error'); }
+});
+
+// كود مكافأة (SP-REWARD-XXXXX) داخل صف الخدمة: بنتأكد من الحالة والصلاحية والخدمة والحد الأدنى وبنحسب الخصم
+function applyRewardToRow(prefix, row, code) {
+    const rd = redemptions.find(r => r.id === code), bad = m => showToast(m, 'error');
+    if (!rd) return bad('كود المكافأة غير موجود');
+    if (rd.status !== 'available') return bad('كود المكافأة ده ' + (RST[rd.status] || rd.status));
+    if (rd.expires && new Date(rd.expires) < new Date()) return bad('كود المكافأة منتهي الصلاحية');
+    const svc = row.querySelector('.svc-service').value;
+    if ((rd.services || []).length && !rd.services.includes(svc)) return bad('المكافأة دي مش بتنطبق على الخدمة دي');
+    const line = (parseFloat(row.querySelector('.svc-price').value) || 0) * (parseFloat(row.querySelector('.svc-qty').value) || 1);
+    if (rd.minOrder && line < rd.minOrder) return bad('الخصم ده للطلبات ' + rd.minOrder + ' أو أكثر');
+    row.querySelector('.svc-discount').value = Math.min(line, rd.discount).toFixed(2);
+    recalcServiceTotals(prefix);
+    showToast('تم تطبيق مكافأة ' + (rd.studentName || ''), 'success');
 }
 
 document.getElementById('refund-form').addEventListener('submit', (e) => {
